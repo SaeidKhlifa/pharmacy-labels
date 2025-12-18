@@ -8,31 +8,42 @@ from reportlab.graphics.barcode import code128
 import arabic_reshaper
 from bidi.algorithm import get_display
 import io
+import os
 
-# --- إعدادات الصفحة في المتصفح ---
+# --- إعدادات الصفحة ---
 st.set_page_config(page_title="مولد ملصقات العروض", page_icon="🏷️")
-
 st.title("🏷️ برنامج طباعة ملصقات العروض")
-st.write("قم برفع ملف الإكسيل وسيقوم البرنامج بتحويله إلى PDF جاهز للطباعة.")
 
-# --- القائمة الجانبية للإعدادات ---
-st.sidebar.header("⚙️ إعدادات الطباعة")
-shift_top = st.sidebar.number_input("إزاحة الصف العلوي (لأعلى/لأسفل)", value=-10, step=1)
-shift_bottom = st.sidebar.number_input("إزاحة الصف السفلي (لأعلى/لأسفل)", value=-10, step=1)
+# --- القائمة الجانبية (تم التحديث: 4 مفاتيح تحكم) ---
+st.sidebar.header("⚙️ إعدادات الصف العلوي (Top Row)")
+top_logo_shift = st.sidebar.number_input("1. إزاحة الشعار (العلوي)", value=0, step=1, help="يحرك كلمة الدواء فقط")
+top_content_shift = st.sidebar.number_input("2. إزاحة المحتوى (العلوي)", value=-10, step=1, help="يحرك الاسم والسعر والباركود")
 
-# --- الدوال المساعدة ---
-# ملاحظة: نحتاج لملف خط بجانب الكود لأن السيرفر لا يحتوي على خطوط ويندوز
+st.sidebar.markdown("---") # فاصل خطي
+
+st.sidebar.header("⚙️ إعدادات الصف السفلي (Bottom Row)")
+bottom_logo_shift = st.sidebar.number_input("3. إزاحة الشعار (السفلي)", value=0, step=1)
+bottom_content_shift = st.sidebar.number_input("4. إزاحة المحتوى (السفلي)", value=-10, step=1)
+
+# --- تعريف الخطوط ---
 FONT_NAME = "CustomFont"
 FONT_BOLD = "CustomFontBold"
 
 def setup_fonts():
-    # يجب وضع ملف arial.ttf في نفس مجلد البرنامج
     try:
-        pdfmetrics.registerFont(TTFont(FONT_NAME, "arial.ttf"))
-        pdfmetrics.registerFont(TTFont(FONT_BOLD, "arialbd.ttf")) 
-    except:
-        # خط احتياطي في حال عدم وجود الملفات
-        st.warning("لم يتم العثور على ملفات الخطوط (arial.ttf)، سيتم استخدام الخط الافتراضي (قد لا تظهر العربية بشكل صحيح).")
+        # محاولة استخدام الخطوط المرفقة
+        if os.path.exists("arial.ttf"):
+            pdfmetrics.registerFont(TTFont(FONT_NAME, "arial.ttf"))
+        else:
+            st.warning("⚠️ ملف arial.ttf غير موجود.")
+            
+        if os.path.exists("arialbd.ttf"):
+            pdfmetrics.registerFont(TTFont(FONT_BOLD, "arialbd.ttf")) 
+        else:
+             if os.path.exists("arial.ttf"):
+                pdfmetrics.registerFont(TTFont(FONT_BOLD, "arial.ttf"))
+    except Exception as e:
+        st.error(f"خطأ في الخطوط: {e}")
 
 def process_arabic(text):
     if not text or pd.isna(text): return ""
@@ -55,21 +66,36 @@ def clean_offer_value(raw_value):
 
 def draw_block(c, x, y, width, height, data, row_index):
     center_x = x + (width / 2)
-    current_shift = shift_top if row_index == 0 else shift_bottom
-    yellow_center_y = y + (height * 0.38) + current_shift
-
     
-    # الاسم الإنجليزي
+    # تحديد قيم الإزاحة بناءً على رقم الصف
+    if row_index == 0:
+        current_logo_shift = top_logo_shift
+        current_content_shift = top_content_shift
+    else:
+        current_logo_shift = bottom_logo_shift
+        current_content_shift = bottom_content_shift
+
+    # 1. رسم الشعار (يتأثر بإزاحة الشعار فقط)
+    brand_ar = process_arabic("الدواء")
+    c.setFont(FONT_BOLD, 18)
+    # مكان الشعار الأساسي + إزاحة الشعار
+    logo_y_pos = y + (height * 0.83) + current_logo_shift
+    c.drawCentredString(center_x, logo_y_pos, f"al-dawaa | {brand_ar}")
+
+    # --- حساب نقطة ارتكاز المحتوى (تتأثر بإزاحة المحتوى فقط) ---
+    yellow_center_y = y + (height * 0.38) + current_content_shift
+
+    # 2. الاسم الإنجليزي
     item_en = str(data.get('English Name', ''))[:28]
     c.setFont(FONT_NAME, 11)
     c.drawCentredString(center_x, yellow_center_y + 45, item_en)
 
-    # الاسم العربي
+    # 3. الاسم العربي
     item_ar = process_arabic(data.get('Arabic Name', ''))
     c.setFont(FONT_NAME, 11)
     c.drawCentredString(center_x, yellow_center_y + 25, item_ar)
 
-    # العرض
+    # 4. العرض
     clean_val, is_number = clean_offer_value(data.get('Current Offer', ''))
     if is_number:
         offer_en = f"{clean_val}% off"
@@ -85,7 +111,7 @@ def draw_block(c, x, y, width, height, data, row_index):
         c.setFont(FONT_BOLD, 18)
         c.drawCentredString(center_x, yellow_center_y - 45, offer_ar)
 
-    # الباركود
+    # 5. الباركود
     raw_code = str(data.get('Item Code', '')).replace('.0', '')
     barcode_y = yellow_center_y - 85
     if raw_code:
@@ -98,11 +124,10 @@ def draw_block(c, x, y, width, height, data, row_index):
             c.drawCentredString(center_x, barcode_y, raw_code)
 
 def create_pdf(df):
-    buffer = io.BytesIO() # إنشاء ملف في الذاكرة بدلاً من القرص الصلب
+    buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     setup_fonts()
     
-    # إعدادات الصفحة
     PAGE_WIDTH, PAGE_HEIGHT = A4
     MARGIN_X, MARGIN_Y = 20, 20
     COLS, ROWS = 3, 2
@@ -130,27 +155,16 @@ def create_pdf(df):
     buffer.seek(0)
     return buffer
 
-# --- واجهة التطبيق الرئيسية ---
+# --- الواجهة ---
+st.write("قم برفع ملف الإكسيل وسيقوم البرنامج بتحويله إلى PDF.")
 uploaded_file = st.file_uploader("اختر ملف الإكسيل (Excel)", type=['xlsx'])
 
 if uploaded_file is not None:
     try:
         df = pd.read_excel(uploaded_file)
-        st.success("تم قراءة الملف بنجاح! عدد الأصناف: " + str(len(df)))
-        
-        # عرض عينة من البيانات
-        st.dataframe(df.head())
-
-        if st.button("إنشاء ملف PDF"):
+        st.success(f"تم تحميل الملف: {len(df)} صنف")
+        if st.button("تحويل إلى PDF"):
             pdf_bytes = create_pdf(df)
-            st.success("تم إنشاء الملف بنجاح! اضغط بالأسفل للتحميل.")
-            
-            st.download_button(
-                label="📥 تحميل ملف PDF",
-                data=pdf_bytes,
-                file_name="offers_labels.pdf",
-                mime="application/pdf"
-            )
-            
+            st.download_button("📥 تحميل الملف", pdf_bytes, "offers_v2.pdf", "application/pdf")
     except Exception as e:
-        st.error(f"حدث خطأ: {e}")
+        st.error(f"خطأ: {e}")
