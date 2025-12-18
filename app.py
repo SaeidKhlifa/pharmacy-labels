@@ -58,11 +58,7 @@ def draw_block(c, x, y, width, height, data, row_index):
     current_shift = shift_top if row_index == 0 else shift_bottom
     yellow_center_y = y + (height * 0.38) + current_shift
 
-    # العلامة التجارية
-    brand_ar = process_arabic("الدواء")
-    c.setFont(FONT_BOLD, 18)
-    c.drawCentredString(center_x, y + (height * 0.83) + current_shift, f"al-dawaa | {brand_ar}")
-
+    
     # الاسم الإنجليزي
     item_en = str(data.get('English Name', ''))[:28]
     c.setFont(FONT_NAME, 11)
