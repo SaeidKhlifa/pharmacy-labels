@@ -14,16 +14,13 @@ import os
 st.set_page_config(page_title="مولد ملصقات العروض", page_icon="🏷️")
 st.title("🏷️ برنامج طباعة ملصقات العروض")
 
-# --- القائمة الجانبية (تم التحديث: 4 مفاتيح تحكم) ---
-st.sidebar.header("⚙️ إعدادات الصف العلوي (Top Row)")
-top_logo_shift = st.sidebar.number_input("1. إزاحة الشعار (العلوي)", value=0, step=1, help="يحرك كلمة الدواء فقط")
-top_content_shift = st.sidebar.number_input("2. إزاحة المحتوى (العلوي)", value=-10, step=1, help="يحرك الاسم والسعر والباركود")
+# --- إعدادات الإزاحة الثابتة (تم إخفاء الأزرار) ---
+# يمكنك تعديل هذه الأرقام من هنا مباشرة في المستقبل إذا احتجت
+TOP_LOGO_SHIFT = 15       # إزاحة الشعار (العلوي)
+TOP_CONTENT_SHIFT = -10   # إزاحة المحتوى (العلوي)
 
-st.sidebar.markdown("---") # فاصل خطي
-
-st.sidebar.header("⚙️ إعدادات الصف السفلي (Bottom Row)")
-bottom_logo_shift = st.sidebar.number_input("3. إزاحة الشعار (السفلي)", value=0, step=1)
-bottom_content_shift = st.sidebar.number_input("4. إزاحة المحتوى (السفلي)", value=-10, step=1)
+BOTTOM_LOGO_SHIFT = 0     # إزاحة الشعار (السفلي)
+BOTTOM_CONTENT_SHIFT = -20 # إزاحة المحتوى (السفلي)
 
 # --- تعريف الخطوط ---
 FONT_NAME = "CustomFont"
@@ -31,7 +28,6 @@ FONT_BOLD = "CustomFontBold"
 
 def setup_fonts():
     try:
-        # محاولة استخدام الخطوط المرفقة
         if os.path.exists("arial.ttf"):
             pdfmetrics.registerFont(TTFont(FONT_NAME, "arial.ttf"))
         else:
@@ -67,22 +63,21 @@ def clean_offer_value(raw_value):
 def draw_block(c, x, y, width, height, data, row_index):
     center_x = x + (width / 2)
     
-    # تحديد قيم الإزاحة بناءً على رقم الصف
+    # تحديد القيم بناءً على الثوابت التي وضعناها في الأعلى
     if row_index == 0:
-        current_logo_shift = top_logo_shift
-        current_content_shift = top_content_shift
+        current_logo_shift = TOP_LOGO_SHIFT
+        current_content_shift = TOP_CONTENT_SHIFT
     else:
-        current_logo_shift = bottom_logo_shift
-        current_content_shift = bottom_content_shift
+        current_logo_shift = BOTTOM_LOGO_SHIFT
+        current_content_shift = BOTTOM_CONTENT_SHIFT
 
-    # 1. رسم الشعار (يتأثر بإزاحة الشعار فقط)
+    # 1. رسم الشعار
     brand_ar = process_arabic("الدواء")
     c.setFont(FONT_BOLD, 18)
-    # مكان الشعار الأساسي + إزاحة الشعار
     logo_y_pos = y + (height * 0.83) + current_logo_shift
     c.drawCentredString(center_x, logo_y_pos, f"al-dawaa | {brand_ar}")
 
-    # --- حساب نقطة ارتكاز المحتوى (تتأثر بإزاحة المحتوى فقط) ---
+    # نقطة ارتكاز المحتوى
     yellow_center_y = y + (height * 0.38) + current_content_shift
 
     # 2. الاسم الإنجليزي
@@ -165,6 +160,6 @@ if uploaded_file is not None:
         st.success(f"تم تحميل الملف: {len(df)} صنف")
         if st.button("تحويل إلى PDF"):
             pdf_bytes = create_pdf(df)
-            st.download_button("📥 تحميل الملف", pdf_bytes, "offers_v2.pdf", "application/pdf")
+            st.download_button("📥 تحميل الملف", pdf_bytes, "offers_final.pdf", "application/pdf")
     except Exception as e:
         st.error(f"خطأ: {e}")
