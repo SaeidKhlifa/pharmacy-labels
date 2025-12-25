@@ -14,13 +14,16 @@ import os
 st.set_page_config(page_title="مولد ملصقات العروض", page_icon="🏷️")
 st.title("🏷️ برنامج طباعة ملصقات العروض")
 
-# --- إعدادات الإزاحة الثابتة (تم إخفاء الأزرار) ---
-# يمكنك تعديل هذه الأرقام من هنا مباشرة في المستقبل إذا احتجت
-TOP_LOGO_SHIFT = 15       # إزاحة الشعار (العلوي)
-TOP_CONTENT_SHIFT = -10   # إزاحة المحتوى (العلوي)
+# --- القائمة الجانبية: التحكم في الخطوط ---
+st.sidebar.header("🔠 إعدادات حجم الخط")
+name_font_size = st.sidebar.number_input("حجم خط اسم الصنف", value=11, min_value=5, max_value=25, step=1)
+offer_font_size = st.sidebar.number_input("حجم خط العرض/السعر", value=30, min_value=10, max_value=60, step=1)
 
-BOTTOM_LOGO_SHIFT = 0     # إزاحة الشعار (السفلي)
-BOTTOM_CONTENT_SHIFT = -20 # إزاحة المحتوى (السفلي)
+# --- إعدادات الإزاحة الثابتة ---
+TOP_LOGO_SHIFT = 15       
+TOP_CONTENT_SHIFT = -10   
+BOTTOM_LOGO_SHIFT = 0     
+BOTTOM_CONTENT_SHIFT = -20 
 
 # --- تعريف الخطوط ---
 FONT_NAME = "CustomFont"
@@ -63,7 +66,6 @@ def clean_offer_value(raw_value):
 def draw_block(c, x, y, width, height, data, row_index):
     center_x = x + (width / 2)
     
-    # تحديد القيم بناءً على الثوابت التي وضعناها في الأعلى
     if row_index == 0:
         current_logo_shift = TOP_LOGO_SHIFT
         current_content_shift = TOP_CONTENT_SHIFT
@@ -80,18 +82,28 @@ def draw_block(c, x, y, width, height, data, row_index):
     # نقطة ارتكاز المحتوى
     yellow_center_y = y + (height * 0.38) + current_content_shift
 
-    # 2. الاسم الإنجليزي
-    item_en = str(data.get('English Name', ''))[:28]
-    c.setFont(FONT_NAME, 11)
+    # --- استخراج البيانات بناءً على ترتيب الأعمدة (Index) وليس الاسم ---
+    # iloc[0] = العمود الأول (الكود)
+    # iloc[1] = العمود الثاني (الاسم العربي)
+    # iloc[2] = العمود الثالث (الاسم الإنجليزي)
+    # iloc[3] = العمود الرابع (العرض)
+
+    # 2. الاسم الإنجليزي (العمود الثالث - رقم 2)
+    item_en = str(data.iloc[2])[:28] if len(data) > 2 else ""
+    if item_en == 'nan': item_en = ""
+    c.setFont(FONT_NAME, name_font_size)
     c.drawCentredString(center_x, yellow_center_y + 45, item_en)
 
-    # 3. الاسم العربي
-    item_ar = process_arabic(data.get('Arabic Name', ''))
-    c.setFont(FONT_NAME, 11)
+    # 3. الاسم العربي (العمود الثاني - رقم 1)
+    item_ar_raw = data.iloc[1] if len(data) > 1 else ""
+    item_ar = process_arabic(item_ar_raw)
+    c.setFont(FONT_NAME, name_font_size)
     c.drawCentredString(center_x, yellow_center_y + 25, item_ar)
 
-    # 4. العرض
-    clean_val, is_number = clean_offer_value(data.get('Current Offer', ''))
+    # 4. العرض (العمود الرابع - رقم 3)
+    offer_raw = data.iloc[3] if len(data) > 3 else ""
+    clean_val, is_number = clean_offer_value(offer_raw)
+    
     if is_number:
         offer_en = f"{clean_val}% off"
         offer_ar = process_arabic(f"خصم {clean_val}%")
@@ -99,15 +111,20 @@ def draw_block(c, x, y, width, height, data, row_index):
         offer_en = clean_val
         offer_ar = process_arabic(clean_val)
 
-    c.setFont(FONT_BOLD, 30)
+    # رسم العرض بالإنجليزية
+    c.setFont(FONT_BOLD, offer_font_size)
     c.drawCentredString(center_x, yellow_center_y - 20, offer_en)
     
+    # رسم العرض بالعربية
     if is_number:
-        c.setFont(FONT_BOLD, 18)
+        arabic_offer_size = int(offer_font_size * 0.6)
+        c.setFont(FONT_BOLD, arabic_offer_size)
         c.drawCentredString(center_x, yellow_center_y - 45, offer_ar)
 
-    # 5. الباركود
-    raw_code = str(data.get('Item Code', '')).replace('.0', '')
+    # 5. الباركود (العمود الأول - رقم 0)
+    raw_code = str(data.iloc[0]).replace('.0', '') if len(data) > 0 else ""
+    if raw_code == 'nan': raw_code = ""
+
     barcode_y = yellow_center_y - 85
     if raw_code:
         try:
@@ -151,15 +168,35 @@ def create_pdf(df):
     return buffer
 
 # --- الواجهة ---
-st.write("قم برفع ملف الإكسيل وسيقوم البرنامج بتحويله إلى PDF.")
+st.write("### 📂 تعليمات الملف")
+st.info("""
+**ملاحظة هامة:** لا يهم اسم الأعمدة في الملف، ولكن **يجب** أن يكون ترتيب البيانات كالتالي:
+1. العمود الأول: **كود الصنف** (Code)
+2. العمود الثاني: **الاسم العربي**
+3. العمود الثالث: **الاسم الإنجليزي**
+4. العمود الرابع: **قيمة العرض** (السعر/الخصم)
+""")
+
 uploaded_file = st.file_uploader("اختر ملف الإكسيل (Excel)", type=['xlsx'])
 
 if uploaded_file is not None:
     try:
+        # قراءة الملف (header=0 يعني يعتبر الصف الأول عناوين ولكنا سنتجاهل أسماءها)
         df = pd.read_excel(uploaded_file)
-        st.success(f"تم تحميل الملف: {len(df)} صنف")
-        if st.button("تحويل إلى PDF"):
-            pdf_bytes = create_pdf(df)
-            st.download_button("📥 تحميل الملف", pdf_bytes, "offers_final.pdf", "application/pdf")
+        
+        # التأكد من أن الملف يحتوي على 4 أعمدة على الأقل
+        if len(df.columns) < 4:
+            st.error("❌ خطأ: الملف المرفوع يحتوي على أقل من 4 أعمدة. يرجى التأكد من الملف.")
+        else:
+            st.success(f"✅ تم تحميل الملف: {len(df)} صنف")
+            
+            # عرض معاينة للمستخدم ليتأكد من الترتيب
+            st.write("👀 **معاينة البيانات (تأكد أن الترتيب صحيح):**")
+            st.dataframe(df.head())
+
+            if st.button("تحويل إلى PDF"):
+                pdf_bytes = create_pdf(df)
+                st.download_button("📥 تحميل الملف", pdf_bytes, "offers_print.pdf", "application/pdf")
+                
     except Exception as e:
         st.error(f"خطأ: {e}")
