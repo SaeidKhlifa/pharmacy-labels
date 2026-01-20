@@ -20,7 +20,7 @@ DIM_YELLOW_H_CM = 7.5    # ارتفاع المنطقة الصفراء
 DIM_CARD_W_CM = 7.0      # عرض المنطقة الصفراء
 DIM_GAP_CM = 0.7         # الفاصل بين الأعمدة
 
-# الأبعاد الداخلية (تنسيق النصوص داخل الأصفر)
+# الأبعاد الداخلية
 POS_BRAND_Y_CM = 0.6
 POS_EN_Y_CM = 1.6
 POS_AR_Y_CM = 2.6
@@ -30,7 +30,7 @@ POS_BARCODE_BOTTOM_CM = 0.8
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
 
-st.set_page_config(page_title="Offers Generator (Fixed + Filters)", layout="wide", page_icon="🏷️")
+st.set_page_config(page_title="Offers Generator (Dynamic Filters)", layout="wide", page_icon="⚡")
 
 def cm2p(cm):
     return cm * 28.3465
@@ -118,7 +118,7 @@ def draw_card_content(c, row):
     draw_text_auto_shrink(c, ar_txt_proc, center_x, ar_y, max_text_width, 
                           FONT_NAME if has_font else "Helvetica", 10, min_font_size=8)
 
-    # 4. العرض (في المنتصف)
+    # 4. العرض
     offer_y = -(height / 2) - 5 
     if has_font:
         draw_text_auto_shrink(c, str(offer_txt), center_x, offer_y, max_text_width, 
@@ -182,9 +182,9 @@ def generate_pdf(df):
     return buffer
 
 # ==========================================
-# 3. الواجهة (مع الفلاتر)
+# 3. الواجهة (منطق الفلترة الديناميكي)
 # ==========================================
-st.title("🖨️ Offers Generator (Fixed Layout + Filters)")
+st.title("🖨️ Offers Generator (Dynamic Filtering)")
 
 if not has_font:
     st.error("⚠️ ملف الخط `arial.ttf` مفقود! اللغة العربية لن تظهر.")
@@ -196,7 +196,7 @@ min_qty = st.sidebar.number_input("أقل كمية للطباعة", 1, 100, 2)
 
 if offers_file and stock_file:
     try:
-        # 1. قراءة البيانات
+        # 1. قراءة البيانات ودمجها
         df1 = pd.read_excel(offers_file)
         df2 = pd.read_excel(stock_file)
         
@@ -205,53 +205,64 @@ if offers_file and stock_file:
         
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
         
-        # 2. فلتر الكمية الأول
+        # DataFrame الأساسي بعد فلتر الكمية
         base_df = merged[merged['Quantity'] >= min_qty].copy()
 
         if base_df.empty:
             st.warning("لا توجد أصناف تحقق شرط الكمية.")
         else:
             st.markdown("---")
-            st.subheader("🔍 تصفية البيانات (Filters)")
+            st.subheader("🔍 الفلاتر الديناميكية (Cascading Filters)")
             
-            # 3. إعداد القوائم المنسدلة
-            # نستخدم astype(str) لضمان عدم حدوث خطأ إذا كانت البيانات مختلطة
-            cats = ['All'] + sorted(list(base_df['Category'].astype(str).unique()))
-            brands = ['All'] + sorted(list(base_df['Brand'].astype(str).unique()))
-            offers_list = ['All'] + sorted(list(base_df['Offer Description EN'].astype(str).unique()))
-
             c1, c2, c3 = st.columns(3)
-            
-            sel_cat = c1.selectbox("القسم (Category)", cats)
-            sel_brand = c2.selectbox("البراند (Brand)", brands)
-            sel_offer = c3.selectbox("نوع العرض (Offer)", offers_list)
 
-            # 4. تطبيق الفلاتر
-            final_df = base_df.copy()
+            # --- الخطوة 1: اختيار القسم (Category) ---
+            # نحصل على كل الأقسام المتاحة
+            all_cats = ['All'] + sorted(list(base_df['Category'].astype(str).unique()))
+            sel_cat = c1.selectbox("1. القسم (Category)", all_cats)
             
-            if sel_cat != 'All':
-                final_df = final_df[final_df['Category'].astype(str) == sel_cat]
-            
-            if sel_brand != 'All':
-                final_df = final_df[final_df['Brand'].astype(str) == sel_brand]
-                
-            if sel_offer != 'All':
-                final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
+            # نفلتر البيانات بناءً على القسم المختار
+            if sel_cat == 'All':
+                df_after_cat = base_df
+            else:
+                df_after_cat = base_df[base_df['Category'].astype(str) == sel_cat]
 
-            # 5. النتائج والتحميل
-            st.info(f"عدد البطاقات التي سيتم طباعتها: {len(final_df)}")
+            # --- الخطوة 2: اختيار البراند (Brand) ---
+            # القائمة هنا تعتمد على (df_after_cat) وليس (base_df)
+            available_brands = ['All'] + sorted(list(df_after_cat['Brand'].astype(str).unique()))
+            sel_brand = c2.selectbox("2. البراند (Brand)", available_brands)
+            
+            # نفلتر البيانات بناءً على البراند المختار
+            if sel_brand == 'All':
+                df_after_brand = df_after_cat
+            else:
+                df_after_brand = df_after_cat[df_after_cat['Brand'].astype(str) == sel_brand]
+
+            # --- الخطوة 3: اختيار العرض (Offer) ---
+            # القائمة هنا تعتمد على (df_after_brand)
+            available_offers = ['All'] + sorted(list(df_after_brand['Offer Description EN'].astype(str).unique()))
+            sel_offer = c3.selectbox("3. العرض (Offer)", available_offers)
+            
+            # نفلتر البيانات بناءً على العرض المختار (النتيجة النهائية)
+            if sel_offer == 'All':
+                final_df = df_after_brand
+            else:
+                final_df = df_after_brand[df_after_brand['Offer Description EN'].astype(str) == sel_offer]
+
+            # --- العرض والتحميل ---
+            st.info(f"العدد النهائي للطباعة: {len(final_df)}")
             
             if not final_df.empty:
                 pdf_data = generate_pdf(final_df)
                 st.download_button(
                     label="📥 تحميل ملف الطباعة (PDF)",
                     data=pdf_data,
-                    file_name="Filtered_Offers.pdf",
+                    file_name="Dynamic_Filtered_Offers.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
             else:
-                st.warning("لا توجد نتائج تطابق الفلاتر المختارة.")
+                st.warning("لا توجد نتائج.")
 
     except Exception as e:
-        st.error(f"حدث خطأ في قراءة الملفات: {e}")
+        st.error(f"حدث خطأ: {e}")
