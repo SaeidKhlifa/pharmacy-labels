@@ -14,24 +14,23 @@ from bidi.algorithm import get_display
 # ==========================================
 # 1. الثوابت والأبعاد (سم) - Hardcoded
 # ==========================================
-# الأبعاد الخارجية (التي حددتها أنت)
 DIM_ROW1_TOP_CM = 7.7    # بداية الأصفر العلوي
 DIM_ROW2_TOP_CM = 22.5   # بداية الأصفر السفلي
 DIM_YELLOW_H_CM = 7.5    # ارتفاع المنطقة الصفراء
 DIM_CARD_W_CM = 7.0      # عرض المنطقة الصفراء
 DIM_GAP_CM = 0.7         # الفاصل بين الأعمدة
 
-# الأبعاد الداخلية (تنسيق النصوص داخل الأصفر - قيم قياسية)
+# الأبعاد الداخلية (تنسيق النصوص داخل الأصفر)
 POS_BRAND_Y_CM = 0.6
 POS_EN_Y_CM = 1.6
 POS_AR_Y_CM = 2.6
-POS_BARCODE_BOTTOM_CM = 0.8 # المسافة من قاع الأصفر للأعلى
+POS_BARCODE_BOTTOM_CM = 0.8
 
 # إعدادات الخطوط
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
 
-st.set_page_config(page_title="Offers Generator (Fixed)", layout="wide", page_icon="🔒")
+st.set_page_config(page_title="Offers Generator (Fixed + Filters)", layout="wide", page_icon="🏷️")
 
 def cm2p(cm):
     return cm * 28.3465
@@ -88,7 +87,6 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
     c.setStrokeColorRGB(0, 0, 0)
 
 def draw_card_content(c, row):
-    """رسم المحتوى داخل المستطيل الأصفر بناءً على الأبعاد الثابتة"""
     item_code = str(row.get('Item Number', '')).replace('.0', '')
     desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
@@ -131,7 +129,7 @@ def draw_card_content(c, row):
         c.setFillColorRGB(0.85, 0.21, 0.27)
         c.drawCentredString(center_x, offer_y, str(offer_txt))
 
-    # 5. الباركود (من الأسفل)
+    # 5. الباركود
     barcode_y = -height + cm2p(POS_BARCODE_BOTTOM_CM)
     
     if item_code:
@@ -151,7 +149,6 @@ def generate_pdf(df):
     c = canvas.Canvas(buffer, pagesize=A4)
     page_w_pt, page_h_pt = A4 
     
-    # تحويل الأبعاد الثابتة لنقاط
     row1_top = cm2p(DIM_ROW1_TOP_CM)
     row2_top = cm2p(DIM_ROW2_TOP_CM)
     card_w_pt = cm2p(DIM_CARD_W_CM)
@@ -166,12 +163,10 @@ def generate_pdf(df):
         
         pos_in_page = i % cards_per_page
         col_idx = pos_in_page % cols
-        row_idx = pos_in_page // cols # 0 or 1
+        row_idx = pos_in_page // cols
         
-        # حساب X
         x_start = col_idx * (card_w_pt + gap_w_pt)
         
-        # حساب Y
         if row_idx == 0:
             y_start = page_h_pt - row1_top
         else:
@@ -187,43 +182,76 @@ def generate_pdf(df):
     return buffer
 
 # ==========================================
-# 3. الواجهة
+# 3. الواجهة (مع الفلاتر)
 # ==========================================
-st.title("🖨️ Offers Generator (Fixed Layout)")
+st.title("🖨️ Offers Generator (Fixed Layout + Filters)")
 
 if not has_font:
     st.error("⚠️ ملف الخط `arial.ttf` مفقود! اللغة العربية لن تظهر.")
 
-st.sidebar.header("رفع الملفات")
+st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض (Excel)", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون (Excel)", type=['xlsx'])
 min_qty = st.sidebar.number_input("أقل كمية للطباعة", 1, 100, 2)
 
 if offers_file and stock_file:
     try:
+        # 1. قراءة البيانات
         df1 = pd.read_excel(offers_file)
         df2 = pd.read_excel(stock_file)
-        # تنظيف البيانات
+        
         df1['Item Number'] = df1['Item Number'].astype(str).str.replace('.0', '')
         df2['Item Number'] = df2['Item Number'].astype(str).str.replace('.0', '')
         
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
-        final_df = merged[merged['Quantity'] >= min_qty].copy()
+        
+        # 2. فلتر الكمية الأول
+        base_df = merged[merged['Quantity'] >= min_qty].copy()
 
-        if final_df.empty:
+        if base_df.empty:
             st.warning("لا توجد أصناف تحقق شرط الكمية.")
         else:
-            st.success(f"تم تجهيز {len(final_df)} كارت للطباعة.")
+            st.markdown("---")
+            st.subheader("🔍 تصفية البيانات (Filters)")
             
-            # زر التحميل المباشر
-            pdf_data = generate_pdf(final_df)
-            st.download_button(
-                label="📥 تحميل ملف الطباعة (PDF)",
-                data=pdf_data,
-                file_name="Print_Offers_Fixed.pdf",
-                mime="application/pdf",
-                type="primary"
-            )
+            # 3. إعداد القوائم المنسدلة
+            # نستخدم astype(str) لضمان عدم حدوث خطأ إذا كانت البيانات مختلطة
+            cats = ['All'] + sorted(list(base_df['Category'].astype(str).unique()))
+            brands = ['All'] + sorted(list(base_df['Brand'].astype(str).unique()))
+            offers_list = ['All'] + sorted(list(base_df['Offer Description EN'].astype(str).unique()))
+
+            c1, c2, c3 = st.columns(3)
+            
+            sel_cat = c1.selectbox("القسم (Category)", cats)
+            sel_brand = c2.selectbox("البراند (Brand)", brands)
+            sel_offer = c3.selectbox("نوع العرض (Offer)", offers_list)
+
+            # 4. تطبيق الفلاتر
+            final_df = base_df.copy()
+            
+            if sel_cat != 'All':
+                final_df = final_df[final_df['Category'].astype(str) == sel_cat]
+            
+            if sel_brand != 'All':
+                final_df = final_df[final_df['Brand'].astype(str) == sel_brand]
+                
+            if sel_offer != 'All':
+                final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
+
+            # 5. النتائج والتحميل
+            st.info(f"عدد البطاقات التي سيتم طباعتها: {len(final_df)}")
+            
+            if not final_df.empty:
+                pdf_data = generate_pdf(final_df)
+                st.download_button(
+                    label="📥 تحميل ملف الطباعة (PDF)",
+                    data=pdf_data,
+                    file_name="Filtered_Offers.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+            else:
+                st.warning("لا توجد نتائج تطابق الفلاتر المختارة.")
 
     except Exception as e:
         st.error(f"حدث خطأ في قراءة الملفات: {e}")
