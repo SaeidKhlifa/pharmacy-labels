@@ -59,17 +59,19 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
     c.setStrokeColorRGB(*color)
     
     if is_bold:
-        # رسم نص عريض باستخدام TextObject
+        # رسم نص عريض باستخدام TextObject (لتفادي الأخطاء السابقة)
         c.setLineWidth(0.5 if current_size < 12 else 0.8)
         text_obj = c.beginText()
         text_obj.setTextRenderMode(2) # Fill + Stroke
         text_obj.setFont(font_name, current_size)
+        
         # حساب مكان البدء ليكون في المنتصف
         start_x = center_x - (text_width / 2)
         text_obj.setTextOrigin(start_x, y)
         text_obj.textOut(text)
         c.drawText(text_obj)
-        # إعادة تعيين السمك فقط (لا نحتاج لإعادة تعيين RenderMode للكانفاس)
+        
+        # إعادة تعيين السمك فقط
         c.setLineWidth(0)
     else:
         # رسم عادي
@@ -196,21 +198,22 @@ st.sidebar.info("حرّك المؤشرات لتثبيت مكان كل عنصر."
 show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
 
 with st.sidebar.expander("📍 التحكم في المواقع (Y Position)", expanded=True):
+    # القيم الافتراضية محدثة حسب طلبك
     s_top_offset = st.slider("بداية المنطقة الصفراء (تخطي الأحمر)", 100, 250, 190)
     
     st.markdown("---")
     st.caption("المسافة من بداية المنطقة الصفراء (لأسفل):")
     
-    s_brand_pos = st.slider("موقع البراند (Brand)", 10, 100, 20)
-    s_en_pos = st.slider("موقع الاسم الإنجليزي", 20, 150, 50)
-    s_ar_pos = st.slider("موقع الاسم العربي", 30, 200, 80)
+    s_brand_pos = st.slider("موقع البراند (Brand)", 10, 100, 10) # كان 20 أصبح 10
+    s_en_pos = st.slider("موقع الاسم الإنجليزي", 20, 150, 31) # كان 50 أصبح 31
+    s_ar_pos = st.slider("موقع الاسم العربي", 30, 200, 54) # كان 80 أصبح 54
     
     st.markdown("---")
-    s_offer_pos = st.slider("موقع العرض (Offer) - الوسط", 50, 250, 140)
+    s_offer_pos = st.slider("موقع العرض (Offer) - الوسط", 50, 250, 84) # كان 140 أصبح 84
     
     st.markdown("---")
     st.caption("المسافة من أسفل الورقة (لأعلى):")
-    s_bc_bottom = st.slider("موقع الباركود (ثابت في القاع)", 0, 80, 25)
+    s_bc_bottom = st.slider("موقع الباركود (ثابت في القاع)", 0, 80, 15) # كان 25 أصبح 15
 
 with st.sidebar.expander("🅰️ أحجام الخطوط (الحد الأقصى)", expanded=False):
     st.caption("سيتم تصغير الخط تلقائياً إذا كان الكلام كثيراً")
