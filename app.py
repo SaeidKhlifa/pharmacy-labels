@@ -247,4 +247,39 @@ if offers_file and stock_file:
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
         final_df = merged[merged['Quantity'] >= min_qty].copy()
 
-        if final_df.
+        if final_df.empty:
+            st.error("لا توجد أصناف.")
+        else:
+            st.subheader("🔍 الفلتر")
+            c1, c2, c3 = st.columns(3)
+            cats = ['All'] + sorted(list(final_df['Category'].dropna().unique()))
+            brands = ['All'] + sorted(list(final_df['Brand'].dropna().unique()))
+            offers_list = ['All'] + sorted(list(final_df['Offer Description EN'].astype(str).dropna().unique()))
+
+            sel_cat = c1.selectbox("القسم", cats)
+            sel_brand = c2.selectbox("البراند", brands)
+            sel_offer = c3.selectbox("العرض", offers_list)
+
+            if sel_cat != 'All': final_df = final_df[final_df['Category'] == sel_cat]
+            if sel_brand != 'All': final_df = final_df[final_df['Brand'] == sel_brand]
+            if sel_offer != 'All': final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
+            
+            st.success(f"العدد: {len(final_df)}")
+            
+            if st.button("👁️ معاينة", type="primary"):
+                preview_pdf = generate_pdf(final_df.head(6), user_settings)
+                st.session_state['preview_pdf'] = preview_pdf
+            
+            if 'preview_pdf' in st.session_state:
+                st.markdown("---")
+                col_prev, col_down = st.columns([2, 1])
+                with col_prev:
+                    doc = fitz.open(stream=st.session_state['preview_pdf'].getvalue(), filetype="pdf")
+                    pix = doc.load_page(0).get_pixmap(dpi=150)
+                    st.image(pix.tobytes("png"), width=600)
+                with col_down:
+                    full_pdf = generate_pdf(final_df, user_settings)
+                    st.download_button("📥 تحميل PDF", full_pdf, "Offers.pdf", "application/pdf")
+
+    except Exception as e:
+        st.error(f"خطأ: {e}")
