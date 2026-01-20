@@ -44,12 +44,12 @@ def process_text(text, is_arabic=False):
 
 def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_size, min_font_size=6, color=(0,0,0), is_bold=False):
     """
-    دالة ذكية تقوم بتصغير الخط تلقائياً إذا كان النص أعرض من المساحة المتاحة (max_width).
+    دالة ذكية تقوم بتصغير الخط تلقائياً وتدعم الـ Bold بدون أخطاء.
     """
     current_size = max_font_size
     text_width = pdfmetrics.stringWidth(text, font_name, current_size)
     
-    # حلقة تكرارية لتصغير الخط حتى يناسب العرض
+    # حلقة تكرارية لتصغير الخط
     while text_width > max_width and current_size > min_font_size:
         current_size -= 0.5
         text_width = pdfmetrics.stringWidth(text, font_name, current_size)
@@ -58,24 +58,25 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
     c.setFillColorRGB(*color)
     c.setStrokeColorRGB(*color)
     
-    # إذا كان مطلوب Bold نقوم بتطبيق Stroke
     if is_bold:
+        # رسم نص عريض باستخدام TextObject
         c.setLineWidth(0.5 if current_size < 12 else 0.8)
         text_obj = c.beginText()
         text_obj.setTextRenderMode(2) # Fill + Stroke
         text_obj.setFont(font_name, current_size)
-        text_obj.setTextOrigin(center_x - (text_width / 2), y)
+        # حساب مكان البدء ليكون في المنتصف
+        start_x = center_x - (text_width / 2)
+        text_obj.setTextOrigin(start_x, y)
         text_obj.textOut(text)
         c.drawText(text_obj)
-        # إعادة تعيين
+        # إعادة تعيين السمك فقط (لا نحتاج لإعادة تعيين RenderMode للكانفاس)
         c.setLineWidth(0)
-        c.setTextRenderMode(0)
     else:
         # رسم عادي
         c.setFont(font_name, current_size)
         c.drawCentredString(center_x, y, text)
     
-    # إعادة اللون للأسود افتراضياً
+    # إعادة اللون للأسود
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
 
@@ -88,36 +89,28 @@ def draw_label(c, x, y, w, h, row, settings):
     offer_txt = row.get('Offer Description EN', '')
 
     center_x = x + (w / 2)
-    max_text_width = w * 0.92  # هامش أمان 8%
+    max_text_width = w * 0.92
 
     # رسم حدود للتجربة
     if settings['show_borders']:
         c.setLineWidth(0.5)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.rect(x, y, w, h) # حدود الكارت كامل
-        # رسم خط يوضح بداية المنطقة الصفراء
+        c.rect(x, y, w, h)
         yellow_start_y = (y + h) - settings['top_offset_skip']
-        c.setStrokeColorRGB(1, 0, 0) # خط أحمر
+        c.setStrokeColorRGB(1, 0, 0)
         c.line(x, yellow_start_y, x+w, yellow_start_y)
 
-    # ==========================================
-    # 1. المنطقة العلوية (البيضاء) - موقع ثابت مطلق
-    # ==========================================
-    # دائماً تبعد 30 نقطة عن الحافة العلوية للكارت
+    # 1. المنطقة العلوية (البيضاء) - ثابتة
     header_y = (y + h) - 30 
     c.setFillColorRGB(0.4, 0.4, 0.4) 
     c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     pharmacy_name = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
     c.drawCentredString(center_x, header_y, pharmacy_name)
 
-    # ==========================================
     # 2. المنطقة الصفراء (نظام المواقع الثابتة)
-    # ==========================================
-    # نقطة الصفر للمنطقة الصفراء (الخط الفاصل بين الأحمر والأصفر)
     yellow_zero_y = (y + h) - settings['top_offset_skip']
 
     # أ. البراند (Brand)
-    # الموقع: ننزل من خط الصفر بمقدار brand_pos_y
     brand_y = yellow_zero_y - settings['brand_pos_y']
     if has_font:
         draw_text_auto_shrink(c, str(brand_txt), center_x, brand_y, max_text_width, 
@@ -126,24 +119,20 @@ def draw_label(c, x, y, w, h, row, settings):
         c.setFont("Helvetica-Bold", settings['brand_font_size'])
         c.drawCentredString(center_x, brand_y, str(brand_txt))
 
-    # ب. الاسم الإنجليزي (English Name)
-    # الموقع: ننزل من خط الصفر بمقدار en_pos_y
+    # ب. الاسم الإنجليزي
     en_y = yellow_zero_y - settings['en_pos_y']
     draw_text_auto_shrink(c, str(desc_en), center_x, en_y, max_text_width, 
                           FONT_NAME if has_font else "Helvetica", settings['name_font_size'], min_font_size=8)
 
-    # ج. الاسم العربي (Arabic Name)
-    # الموقع: ننزل من خط الصفر بمقدار ar_pos_y
+    # ج. الاسم العربي
     ar_y = yellow_zero_y - settings['ar_pos_y']
     ar_txt_proc = process_text(desc_ar, is_arabic=True)
     draw_text_auto_shrink(c, ar_txt_proc, center_x, ar_y, max_text_width, 
                           FONT_NAME if has_font else "Helvetica", settings['name_font_size'], min_font_size=8)
 
-    # د. العرض (Offer) - مساحة كبيرة
-    # الموقع: ننزل من خط الصفر بمقدار offer_pos_y
+    # د. العرض (Offer)
     offer_y = yellow_zero_y - settings['offer_pos_y']
     if has_font:
-        # هنا نسمح بتصغير أقل قليلاً لأننا نريد العرض كبيراً، ولكن إذا كان طويلاً جداً سيصغر
         draw_text_auto_shrink(c, str(offer_txt), center_x, offer_y, max_text_width, 
                               FONT_NAME, settings['price_font_size'], min_font_size=12, 
                               color=(0.85, 0.21, 0.27), is_bold=True)
@@ -152,8 +141,7 @@ def draw_label(c, x, y, w, h, row, settings):
         c.setFillColorRGB(0.85, 0.21, 0.27)
         c.drawCentredString(center_x, offer_y, str(offer_txt))
 
-    # هـ. الباركود (Barcode) - ثابت من الأسفل
-    # موقعه يعتمد على قاع الورقة (y) وليس المنطقة الصفراء العلوية
+    # هـ. الباركود
     barcode_y = y + settings['barcode_bottom_margin']
     
     if item_code:
@@ -190,9 +178,9 @@ def generate_pdf(df, settings):
     return buffer
 
 # ==========================================
-# 3. واجهة المستخدم (التحكم بالمواقع)
+# 3. واجهة المستخدم
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Fixed Layout & Auto-Size)")
+st.title("🏷️ Offers Generator Pro (Fixed & Stable)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing.")
@@ -204,14 +192,12 @@ min_qty = st.sidebar.number_input("أقل كمية", 2, 100, 2)
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. ضبط المواقع الثابتة")
-st.sidebar.info("حرّك المؤشرات لتثبيت مكان كل عنصر داخل المنطقة الصفراء.")
+st.sidebar.info("حرّك المؤشرات لتثبيت مكان كل عنصر.")
 show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
 
 with st.sidebar.expander("📍 التحكم في المواقع (Y Position)", expanded=True):
-    # 1. بداية المنطقة الصفراء
     s_top_offset = st.slider("بداية المنطقة الصفراء (تخطي الأحمر)", 100, 250, 190)
     
-    # 2. مواقع العناصر داخل الأصفر (المسافة من بداية الأصفر)
     st.markdown("---")
     st.caption("المسافة من بداية المنطقة الصفراء (لأسفل):")
     
@@ -231,22 +217,18 @@ with st.sidebar.expander("🅰️ أحجام الخطوط (الحد الأقصى
     s_header_font = st.slider("حجم اسم الصيدلية", 6, 14, 8)
     s_brand_font = st.slider("حجم البراند (Max)", 10, 30, 14)
     s_name_font = st.slider("حجم الأسماء (Max)", 8, 25, 12)
-    s_price_font = st.slider("حجم العرض (Max)", 10, 60, 30) # كبير جداً للعرض
+    s_price_font = st.slider("حجم العرض (Max)", 10, 60, 30)
     s_bc_h = st.slider("ارتفاع الباركود", 10, 50, 25)
     s_bc_font = st.slider("رقم الباركود", 6, 14, 10)
 
 user_settings = {
     'show_borders': show_borders, 
     'top_offset_skip': s_top_offset,
-    
-    # مواقع ثابتة
     'brand_pos_y': s_brand_pos,
     'en_pos_y': s_en_pos,
     'ar_pos_y': s_ar_pos,
     'offer_pos_y': s_offer_pos,
     'barcode_bottom_margin': s_bc_bottom,
-    
-    # أحجام الخطوط
     'header_font_size': s_header_font,
     'brand_font_size': s_brand_font, 
     'name_font_size': s_name_font,
