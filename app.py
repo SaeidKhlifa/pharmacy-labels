@@ -13,7 +13,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 
 # ==========================================
-# 1. إعدادات الخطوط والنظام
+# 1. إعدادات الخطوط
 # ==========================================
 st.set_page_config(page_title="Offers Generator Pro", layout="wide", page_icon="🏷️")
 
@@ -32,7 +32,6 @@ def setup_fonts():
 has_font = setup_fonts()
 
 def process_text(text, is_arabic=False):
-    """معالجة النص العربي"""
     if pd.isna(text) or text == "": return ""
     text = str(text)
     if is_arabic and has_font:
@@ -41,51 +40,37 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. محرك رسم PDF (تم إصلاح دالة Bold)
+# 2. دوال الرسم (محسنة)
 # ==========================================
 
 def draw_bold_centered(c, text, center_x, y, font_name, font_size, color_rgb=(0,0,0), stroke_width=0.7):
-    """
-    دالة مساعدة لرسم نص عريض (Faux Bold) باستخدام TextObject لتجنب الأخطاء.
-    """
-    # حساب عرض النص لتحديد نقطة البداية (للتوسيط)
+    """رسم نص عريض (Bold)"""
     text_width = pdfmetrics.stringWidth(text, font_name, font_size)
     start_x = center_x - (text_width / 2)
-    
-    # إعداد الألوان والسمك للحدود الخارجية (Stroke)
     c.setStrokeColorRGB(*color_rgb)
     c.setFillColorRGB(*color_rgb)
     c.setLineWidth(stroke_width)
-    
-    # إنشاء كائن النص
     text_obj = c.beginText()
-    text_obj.setTextRenderMode(2)  # 2 = Fill + Stroke (تعبئة + حدود) -> يعطي تأثير Bold
+    text_obj.setTextRenderMode(2)
     text_obj.setFont(font_name, font_size)
     text_obj.setTextOrigin(start_x, y)
     text_obj.textOut(text)
-    
-    # رسم النص على اللوحة
     c.drawText(text_obj)
-    
-    # إعادة اللوحة للوضع الطبيعي (لتجنب التأثير على النصوص الأخرى)
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
     c.setLineWidth(0)
 
 def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, line_spacing=4):
-    """دالة لكتابة نص طويل مع التفاف للأسطر"""
     c.setFont(font_name, font_size)
     lines = simpleSplit(text, font_name, font_size, max_width)
-    
     current_y = y
     for line in lines:
         c.drawCentredString(x, current_y, line)
         current_y -= (font_size + line_spacing)
-    
     return current_y
 
 def draw_label(c, x, y, w, h, row, settings):
-    # استخراج البيانات
+    # البيانات
     item_code = str(row.get('Item Number', '')).replace('.0', '')
     desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
@@ -100,45 +85,50 @@ def draw_label(c, x, y, w, h, row, settings):
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(x, y, w, h)
 
-    # --- الحسابات ---
-    current_y = (y + h) - settings['top_offset_skip']
-
-    # 1. اسم الصيدلية
+    # ==========================================
+    # 1. المنطقة العلوية (البيضاء) - ثابتة
+    # ==========================================
+    # نضع اسم الصيدلية في أعلى الكارت بمسافة ثابتة (مثلاً 1 سم من الحافة العلوية)
+    header_y_position = (y + h) - 30  # 30 نقطة من الحافة العلوية
+    
     c.setFillColorRGB(0.4, 0.4, 0.4) 
     c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     pharmacy_name = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
-    c.drawCentredString(center_x, current_y, pharmacy_name)
-    
-    current_y -= settings['spacing_header_to_brand']
+    c.drawCentredString(center_x, header_y_position, pharmacy_name)
 
-    # 2. البراند (BOLD - تم الإصلاح)
-    # نستخدم الدالة الجديدة draw_bold_centered
+    # ==========================================
+    # 2. منطقة المحتوى (الصفراء)
+    # ==========================================
+    # نبدأ الحساب من بعد الإزاحة التي يحددها المستخدم (لتخطي الأحمر)
+    content_start_y = (y + h) - settings['top_offset_skip']
+
+    # أ. البراند (داخل الأصفر)
+    current_y = content_start_y
+    c.setFillColorRGB(0, 0, 0)
     if has_font:
         draw_bold_centered(c, str(brand_txt), center_x, current_y, FONT_NAME, settings['brand_font_size'], (0,0,0), stroke_width=0.7)
     else:
-        # Fallback إذا لم يوجد خط عربي
         c.setFont("Helvetica-Bold", settings['brand_font_size'])
-        c.setFillColorRGB(0, 0, 0)
         c.drawCentredString(center_x, current_y, str(brand_txt))
 
     current_y -= settings['spacing_brand_to_name']
 
-    # 3. الاسم الإنجليزي
+    # ب. الاسم الإنجليزي
     font_used = FONT_NAME if has_font else "Helvetica"
     c.setFillColorRGB(0, 0, 0)
     current_y = draw_wrapped_text(c, str(desc_en), center_x, current_y, max_text_width, font_used, settings['name_font_size'])
 
-    # 4. مسافة
+    # ج. مسافة
     current_y -= settings['spacing_en_to_ar']
 
-    # 5. الاسم العربي
+    # د. الاسم العربي
     ar_text = process_text(desc_ar, is_arabic=True)
     current_y = draw_wrapped_text(c, ar_text, center_x, current_y, max_text_width, font_used, settings['name_font_size'])
 
-    # 6. مسافة قبل العرض
+    # هـ. مسافة قبل العرض
     current_y -= settings['spacing_ar_to_offer']
 
-    # 7. العرض / السعر (BOLD RED - تم الإصلاح)
+    # و. العرض / السعر (داخل الأصفر)
     if has_font:
         draw_bold_centered(c, str(offer_txt), center_x, current_y, FONT_NAME, settings['price_font_size'], (0.85, 0.21, 0.27), stroke_width=1.0)
     else:
@@ -146,7 +136,8 @@ def draw_label(c, x, y, w, h, row, settings):
         c.setFillColorRGB(0.85, 0.21, 0.27)
         c.drawCentredString(center_x, current_y, str(offer_txt))
 
-    # 8. الباركود
+    # ز. الباركود (أسفل الأصفر)
+    # يتم حسابه من أسفل الورقة للأعلى
     barcode_y = y + settings['barcode_bottom_margin']
     
     if item_code:
@@ -185,43 +176,43 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Bold Fixed)")
+st.title("🏷️ Offers Generator Pro (Yellow Zone Fix)")
 
 if not has_font:
-    st.warning("⚠️ Font `arial.ttf` missing. Arabic will look broken.")
+    st.warning("⚠️ Font `arial.ttf` missing.")
 
-# --- القائمة الجانبية ---
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون", type=['xlsx'])
 min_qty = st.sidebar.number_input("أقل كمية", 2, 100, 2)
 
 st.sidebar.markdown("---")
-st.sidebar.header("2. تصميم المسافات والأحجام")
-show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
+st.sidebar.header("2. ضبط المسافات")
+show_borders = st.sidebar.checkbox("حدود للتجربة", False)
 
-with st.sidebar.expander("📏 المسافات (المحور الرأسي)", expanded=True):
-    st.info("ملاحظة: 28 نقطة ≈ 1 سم")
-    s_top_offset = st.slider("إزاحة علوية (لتخطي الهيدر الأحمر)", 0, 100, 40)
-    s_head_brand_gap = st.slider("مسافة: صيدلية -> براند", 5, 80, 50)
-    s_brand_name_gap = st.slider("مسافة: براند -> اسم إنجليزي", 5, 50, 25)
+with st.sidebar.expander("📏 المسافات الرأسية (هام جداً)", expanded=True):
+    st.info("قم بزيادة 'بداية الكلام' لإنزاله للمنطقة الصفراء")
+    
+    # تم زيادة الحد الأقصى إلى 250 وتغيير الافتراضي إلى 190 (حوالي 6.7 سم)
+    s_top_offset = st.slider("بداية الكلام (تخطي الأبيض والأحمر)", 0, 250, 190, help="هذا يحدد أين يبدأ اسم البراند. زده لينزل للأصفر.")
+    
+    s_brand_name_gap = st.slider("مسافة: براند -> إنجليزي", 5, 50, 20)
     s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي", 5, 60, 15)
-    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 85)
-    s_bc_bottom = st.slider("مكان الباركود (من الأسفل)", 0, 80, 20)
+    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 60)
+    s_bc_bottom = st.slider("ارتفاع الباركود (من الأسفل)", 0, 80, 25)
 
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
     s_header_font = st.slider("حجم اسم الصيدلية", 6, 14, 8)
-    s_brand_font = st.slider("حجم البراند (Bold)", 10, 24, 14)
-    s_name_font = st.slider("حجم اسم الصنف", 8, 20, 11)
-    s_price_font = st.slider("حجم السعر/العرض (Bold)", 10, 60, 24)
-    s_bc_h = st.slider("ارتفاع الباركود", 10, 50, 25)
-    s_bc_font = st.slider("حجم رقم الباركود", 6, 14, 10)
+    s_brand_font = st.slider("حجم البراند", 10, 24, 14)
+    s_name_font = st.slider("حجم اسم الصنف", 8, 20, 10) # صغرته قليلاً ليناسب المساحة
+    s_price_font = st.slider("حجم العرض", 10, 60, 24)
+    s_bc_h = st.slider("طول خطوط الباركود", 10, 50, 25)
+    s_bc_font = st.slider("رقم الباركود", 6, 14, 10)
 
 user_settings = {
     'show_borders': show_borders, 
     'top_offset_skip': s_top_offset,
     'barcode_bottom_margin': s_bc_bottom, 
-    'spacing_header_to_brand': s_head_brand_gap,
     'spacing_brand_to_name': s_brand_name_gap,
     'spacing_en_to_ar': s_en_ar_gap, 
     'spacing_ar_to_offer': s_ar_offer_gap,
@@ -233,58 +224,49 @@ user_settings = {
     'barcode_font_size': s_bc_font
 }
 
-# --- المنطق الرئيسي ---
+# المنطق الرئيسي
 if offers_file and stock_file:
     try:
         df1 = pd.read_excel(offers_file)
         df2 = pd.read_excel(stock_file)
-        
         df1['Item Number'] = df1['Item Number'].astype(str).str.replace('.0', '')
         df2['Item Number'] = df2['Item Number'].astype(str).str.replace('.0', '')
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
         final_df = merged[merged['Quantity'] >= min_qty].copy()
 
         if final_df.empty:
-            st.error("لا توجد أصناف مطابقة.")
+            st.error("لا توجد أصناف.")
         else:
-            # --- منطقة الفلاتر ---
-            st.subheader("🔍 تصفية النتائج")
+            st.subheader("🔍 الفلتر")
             c1, c2, c3 = st.columns(3)
-            
             cats = ['All'] + sorted(list(final_df['Category'].dropna().unique()))
             brands = ['All'] + sorted(list(final_df['Brand'].dropna().unique()))
             offers_list = ['All'] + sorted(list(final_df['Offer Description EN'].astype(str).dropna().unique()))
 
             sel_cat = c1.selectbox("القسم", cats)
             sel_brand = c2.selectbox("البراند", brands)
-            sel_offer = c3.selectbox("خصم العرض", offers_list)
+            sel_offer = c3.selectbox("العرض", offers_list)
 
             if sel_cat != 'All': final_df = final_df[final_df['Category'] == sel_cat]
             if sel_brand != 'All': final_df = final_df[final_df['Brand'] == sel_brand]
             if sel_offer != 'All': final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
             
-            st.info(f"جاهز لطباعة **{len(final_df)}** صنف.")
+            st.success(f"العدد: {len(final_df)}")
             
-            # زر المعاينة
-            if st.button("👁️ معاينة الصفحة الأولى", type="primary"):
+            if st.button("👁️ معاينة", type="primary"):
                 preview_pdf = generate_pdf(final_df.head(6), user_settings)
                 st.session_state['preview_pdf'] = preview_pdf
             
-            # عرض المعاينة
             if 'preview_pdf' in st.session_state:
                 st.markdown("---")
                 col_prev, col_down = st.columns([2, 1])
-                
                 with col_prev:
-                    st.subheader("صورة المعاينة")
                     doc = fitz.open(stream=st.session_state['preview_pdf'].getvalue(), filetype="pdf")
                     pix = doc.load_page(0).get_pixmap(dpi=150)
-                    st.image(pix.tobytes("png"), caption="معاينة حية", width=600)
-                
+                    st.image(pix.tobytes("png"), width=600)
                 with col_down:
-                    st.success("هل التصميم مناسب؟")
                     full_pdf = generate_pdf(final_df, user_settings)
-                    st.download_button("📥 تحميل الملف كامل", full_pdf, "Final_Offers.pdf", "application/pdf")
+                    st.download_button("📥 تحميل PDF", full_pdf, "Offers.pdf", "application/pdf")
 
     except Exception as e:
-        st.error(f"حدث خطأ: {e}")
+        st.error(f"خطأ: {e}")
