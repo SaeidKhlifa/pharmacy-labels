@@ -41,89 +41,75 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. محرك رسم PDF (المحدث)
+# 2. محرك رسم PDF
 # ==========================================
 
 def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, line_spacing=4):
-    """
-    دالة مساعدة لكتابة نص طويل وتنزيله للسطر التالي إذا لم يكفِ العرض.
-    ترجع دالة الـ y الجديدة بعد الانتهاء من الكتابة (لمعرفة مكان العنصر التالي).
-    """
+    """دالة لكتابة نص طويل مع التفاف للأسطر"""
     c.setFont(font_name, font_size)
-    # تقسيم النص إلى أسطر بناءً على العرض المتاح
     lines = simpleSplit(text, font_name, font_size, max_width)
     
     current_y = y
     for line in lines:
         c.drawCentredString(x, current_y, line)
-        current_y -= (font_size + line_spacing) # النزول للأسفل
+        current_y -= (font_size + line_spacing)
     
-    # إرجاع الارتفاع الذي توقفنا عنده لنكمل الرسم تحته
-    # نعيد حساب الفرق لنعرف كم نزلنا بالضبط
-    height_consumed = y - current_y
-    return current_y, height_consumed
+    return current_y
 
 def draw_label(c, x, y, w, h, row, settings):
     # استخراج البيانات
     item_code = str(row.get('Item Number', '')).replace('.0', '')
-    desc_en = row.get('Item Description EN', '') # الاسم كاملاً بدون قص
+    desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
     brand_txt = row.get('Brand', '')
     offer_txt = row.get('Offer Description EN', '')
 
     center_x = x + (w / 2)
-    max_text_width = w * 0.90 # ترك هامش 10%
+    max_text_width = w * 0.90 
 
-    # رسم إطار للتجربة (اختياري)
     if settings['show_borders']:
         c.setLineWidth(0.5)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(x, y, w, h)
 
-    # --- بداية الحسابات ---
-    # النقطة المرجعية العليا (بداية منطقة الطباعة الصفراء 8 سم)
+    # --- الحسابات ---
     current_y = (y + h) - settings['top_offset_skip']
 
-    # 1. اسم الصيدلية (Pharmacy Name) - تمت إضافته
-    c.setFillColorRGB(0.4, 0.4, 0.4) # لون رمادي غامق
+    # 1. اسم الصيدلية
+    c.setFillColorRGB(0.4, 0.4, 0.4) 
     c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     pharmacy_name = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
     c.drawCentredString(center_x, current_y, pharmacy_name)
     
-    # تحديث المكان للمكون التالي
     current_y -= settings['spacing_header_to_brand']
 
-    # 2. البراند (Brand)
-    c.setFillColorRGB(0, 0, 0) # أسود
+    # 2. البراند
+    c.setFillColorRGB(0, 0, 0)
     c.setFont(FONT_NAME if has_font else "Helvetica-Bold", settings['brand_font_size'])
     c.drawCentredString(center_x, current_y, str(brand_txt))
     
-    # تحديث المكان
     current_y -= settings['spacing_brand_to_name']
 
-    # 3. الاسم الإنجليزي (English Name) - مع التفاف النص
+    # 3. الاسم الإنجليزي
     font_used = FONT_NAME if has_font else "Helvetica"
-    new_y, _ = draw_wrapped_text(c, str(desc_en), center_x, current_y, max_text_width, font_used, settings['name_font_size'])
-    current_y = new_y # اعتماد المكان الجديد بعد كتابة الأسطر
+    current_y = draw_wrapped_text(c, str(desc_en), center_x, current_y, max_text_width, font_used, settings['name_font_size'])
 
-    # 4. الفراغ الأول (1 سم تقريباً) بين الإنجليزي والعربي
+    # 4. مسافة
     current_y -= settings['spacing_en_to_ar']
 
-    # 5. الاسم العربي (Arabic Name) - مع التفاف النص
+    # 5. الاسم العربي
     ar_text = process_text(desc_ar, is_arabic=True)
-    new_y, _ = draw_wrapped_text(c, ar_text, center_x, current_y, max_text_width, font_used, settings['name_font_size'])
-    current_y = new_y
+    current_y = draw_wrapped_text(c, ar_text, center_x, current_y, max_text_width, font_used, settings['name_font_size'])
 
-    # 6. الفراغ الثاني (3 سم تقريباً) بين الأسماء والعرض
+    # 6. مسافة قبل العرض
     current_y -= settings['spacing_ar_to_offer']
 
-    # 7. العرض / السعر (Offer/Price)
+    # 7. العرض / السعر
     c.setFont(FONT_NAME if has_font else "Helvetica-Bold", settings['price_font_size'])
     c.setFillColorRGB(0.85, 0.21, 0.27) # أحمر
     c.drawCentredString(center_x, current_y, str(offer_txt))
 
-    # 8. الباركود والرقم (في الأسفل تماماً)
-    # يتم حسابه من الأسفل للأعلى لضمان عدم خروجه من الورقة
+    # 8. الباركود
     barcode_y = y + settings['barcode_bottom_margin']
     
     if item_code:
@@ -179,17 +165,11 @@ show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
 
 with st.sidebar.expander("📏 المسافات (المحور الرأسي)", expanded=True):
     st.info("ملاحظة: 28 نقطة ≈ 1 سم")
-    
     s_top_offset = st.slider("إزاحة علوية (لتخطي الهيدر الأحمر)", 0, 100, 40)
     s_head_brand_gap = st.slider("مسافة: صيدلية -> براند", 5, 50, 15)
     s_brand_name_gap = st.slider("مسافة: براند -> اسم إنجليزي", 5, 50, 15)
-    
-    # الطلب: 1 سم بين الاسمين
-    s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي (تقريباً 1 سم = 28)", 5, 60, 28)
-    
-    # الطلب: 3 سم بين الاسماء والعرض
-    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض (تقريباً 3 سم = 85)", 10, 120, 85)
-    
+    s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي", 5, 60, 28)
+    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 85)
     s_bc_bottom = st.slider("مكان الباركود (من الأسفل)", 0, 80, 20)
 
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
@@ -204,12 +184,10 @@ user_settings = {
     'show_borders': show_borders, 
     'top_offset_skip': s_top_offset,
     'barcode_bottom_margin': s_bc_bottom, 
-    
     'spacing_header_to_brand': s_head_brand_gap,
     'spacing_brand_to_name': s_brand_name_gap,
     'spacing_en_to_ar': s_en_ar_gap, 
     'spacing_ar_to_offer': s_ar_offer_gap,
-    
     'header_font_size': s_header_font,
     'brand_font_size': s_brand_font, 
     'name_font_size': s_name_font,
@@ -232,14 +210,24 @@ if offers_file and stock_file:
         if final_df.empty:
             st.error("لا توجد أصناف مطابقة.")
         else:
+            # --- منطقة الفلاتر (تم التعديل هنا) ---
+            st.subheader("🔍 تصفية النتائج")
             c1, c2, c3 = st.columns(3)
+            
+            # تجهيز القوائم
             cats = ['All'] + sorted(list(final_df['Category'].dropna().unique()))
             brands = ['All'] + sorted(list(final_df['Brand'].dropna().unique()))
+            offers_list = ['All'] + sorted(list(final_df['Offer Description EN'].astype(str).dropna().unique()))
+
+            # عرض القوائم
             sel_cat = c1.selectbox("القسم", cats)
             sel_brand = c2.selectbox("البراند", brands)
-            
+            sel_offer = c3.selectbox("خصم العرض", offers_list) # <-- الفلتر الجديد
+
+            # تطبيق الفلاتر
             if sel_cat != 'All': final_df = final_df[final_df['Category'] == sel_cat]
             if sel_brand != 'All': final_df = final_df[final_df['Brand'] == sel_brand]
+            if sel_offer != 'All': final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
             
             st.info(f"جاهز لطباعة **{len(final_df)}** صنف.")
             
