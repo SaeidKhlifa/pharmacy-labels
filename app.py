@@ -7,7 +7,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.graphics.barcode import code128
+from reportlab.graphics.barcode import code128 
 import arabic_reshaper
 from bidi.algorithm import get_display
 
