@@ -14,13 +14,13 @@ from bidi.algorithm import get_display
 # ==========================================
 # 1. إعدادات النظام والتحويلات
 # ==========================================
-st.set_page_config(page_title="Offers Generator Pro (Fixed Alignment)", layout="wide", page_icon="🖨️")
+st.set_page_config(page_title="Offers Generator Pro (Total Control)", layout="wide", page_icon="🖨️")
 
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
 
 def mm2p(mm):
-    """تحويل من مليمتر إلى نقاط بدقة عالية"""
+    """تحويل مليمتر إلى نقاط"""
     return mm * 2.83465
 
 def setup_fonts():
@@ -43,11 +43,10 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. دوال الرسم (معزولة وثابتة)
+# 2. دوال الرسم (معزولة)
 # ==========================================
 
 def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_size, min_font_size=6, color=(0,0,0), is_bold=False):
-    """رسم نص ذكي يقوم بتصغير نفسه ليدخل في الصندوق"""
     current_size = max_font_size
     text_width = pdfmetrics.stringWidth(text, font_name, current_size)
     
@@ -72,41 +71,40 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
         c.setFont(font_name, current_size)
         c.drawCentredString(center_x, y, text)
     
-    # إعادة تعيين الألوان للأسود لتجنب التأثير على العناصر التالية
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
 
-def draw_label(c, x, y, w, h, row, settings):
-    """رسم كارت واحد في مكان محدد"""
+def draw_single_card(c, w, h, row, settings):
+    """رسم محتوى كارت واحد"""
     item_code = str(row.get('Item Number', '')).replace('.0', '')
     desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
     brand_txt = row.get('Brand', '')
     offer_txt = row.get('Offer Description EN', '')
 
-    center_x = x + (w / 2)
+    center_x = w / 2 
     max_text_width = w * 0.92
 
-    # --- منطقة الحدود (للتجربة) ---
+    # حدود للتجربة
     if settings['show_borders']:
         c.setLineWidth(0.5)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.rect(x, y, w, h)
-        
-        yellow_start_y = (y + h) - mm2p(settings['yellow_start_mm'])
+        c.rect(0, 0, w, h)
+        # خط بداية الأصفر
+        yellow_line_y = h - mm2p(settings['yellow_start_mm'])
         c.setStrokeColorRGB(1, 0, 0)
         c.setLineWidth(1)
-        c.line(x, yellow_start_y, x+w, yellow_start_y)
+        c.line(0, yellow_line_y, w, yellow_line_y)
 
     # 1. المنطقة العلوية (اسم الصيدلية)
-    header_y = (y + h) - mm2p(10)
+    header_y = h - mm2p(10)
     c.setFillColorRGB(0.4, 0.4, 0.4) 
     c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     pharmacy_name = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
     c.drawCentredString(center_x, header_y, pharmacy_name)
 
     # 2. المنطقة الصفراء
-    yellow_zero_y = (y + h) - mm2p(settings['yellow_start_mm'])
+    yellow_zero_y = h - mm2p(settings['yellow_start_mm'])
 
     # أ. البراند
     brand_y = yellow_zero_y - mm2p(settings['brand_pos_mm'])
@@ -140,7 +138,7 @@ def draw_label(c, x, y, w, h, row, settings):
         c.drawCentredString(center_x, offer_y, str(offer_txt))
 
     # هـ. الباركود
-    barcode_y = y + mm2p(settings['barcode_bottom_mm'])
+    barcode_y = 0 + mm2p(settings['barcode_bottom_mm'])
     
     if item_code:
         try:
@@ -162,34 +160,48 @@ def generate_pdf(df, settings):
     cols, rows = 3, 2
     block_w, block_h = page_w / cols, page_h / rows
     
+    # متغير لتتبع رقم الصفحة
+    current_page_num = 1
+    
     for i, (_, row) in enumerate(df.iterrows()):
         # إدارة الصفحات الجديدة
         if i > 0 and i % (cols * rows) == 0:
-            c.showPage() # إعادة ضبط الإحداثيات للصفحة الجديدة
+            c.showPage()
+            current_page_num += 1
         
-        # حساب الموقع
         pos = i % (cols * rows)
         col_idx = pos % cols
         row_idx = pos // cols 
         
+        # حساب الإحداثيات الأساسية
         base_x = col_idx * block_w
         base_y = page_h - ((row_idx + 1) * block_h)
         
-        # حساب الإزاحة الخاصة بكل نصف
-        if row_idx == 0:
-            final_x = base_x + mm2p(settings['top_x_mm'])
-            final_y = base_y + mm2p(settings['top_y_mm'])
-        else:
-            final_x = base_x + mm2p(settings['bottom_x_mm'])
-            final_y = base_y + mm2p(settings['bottom_y_mm'])
+        # === تطبيق الإزاحات (المعايرة) ===
+        offset_x = 0
+        offset_y = 0
         
-        # === هام جداً: عزل الحالة (State Isolation) ===
-        # هذا الأمر يحفظ حالة الصفحة قبل الرسم ويستعيدها بعده
-        # مما يمنع أي تداخل أو انحراف في القياسات بين الكروت
+        # 1. معايرة الصفوف (علوي/سفلي)
+        if row_idx == 0:
+            offset_x = mm2p(settings['top_x_mm'])
+            offset_y = mm2p(settings['top_y_mm'])
+        else:
+            offset_x = mm2p(settings['bottom_x_mm'])
+            offset_y = mm2p(settings['bottom_y_mm'])
+            
+        # 2. معايرة الصفحات المتتالية (حل مشكلة الصفحة الثانية)
+        # إذا كنا في الصفحة 2 أو أكثر، نطبق تصحيح إضافي
+        if current_page_num > 1:
+            offset_y += mm2p(settings['next_pages_correction_mm'])
+
+        final_origin_x = base_x + offset_x
+        final_origin_y = base_y + offset_y
+        
+        # === العزل والرسم ===
         c.saveState()
-        draw_label(c, final_x, final_y, block_w, block_h, row, settings)
+        c.translate(final_origin_x, final_origin_y)
+        draw_single_card(c, block_w, block_h, row, settings)
         c.restoreState()
-        # ============================================
         
     c.save()
     buffer.seek(0)
@@ -198,47 +210,52 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🖨️ Offers Generator Pro (Stable Alignment)")
+st.title("🖨️ Offers Generator Pro (Calibration Master)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing.")
 
-# القائمة الجانبية
+# --- القائمة الجانبية ---
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون", type=['xlsx'])
 min_qty = st.sidebar.number_input("أقل كمية", 2, 100, 2)
 
 st.sidebar.markdown("---")
-st.sidebar.header("2. 🎚️ معايرة الطابعة (Printer Calibration)")
-st.sidebar.info("القيم هنا بالميليمتر. استخدمها لضبط الطباعة على الورق.")
+st.sidebar.header("2. 🎚️ معايرة الطابعة (Offset Control)")
 
-tab_top, tab_bottom = st.sidebar.tabs(["⬆️ النصف العلوي", "⬇️ النصف السفلي"])
+# تبويبات التحكم المنفصل
+tab_top, tab_bot, tab_page = st.sidebar.tabs(["⬆️ النصف العلوي", "⬇️ النصف السفلي", "📄 الصفحات التالية"])
 
 with tab_top:
-    st.caption("ضبط الصف الأول (الثلاثة كروت العليا)")
-    s_top_x = st.number_input("تحريك أفقي (Top X)", -50.0, 50.0, 0.0, step=0.5, key="tx")
-    s_top_y = st.number_input("تحريك رأسي (Top Y)", -50.0, 50.0, 0.0, step=0.5, key="ty")
+    st.info("تحكم في الـ 3 كروت العلوية فقط")
+    s_top_x = st.number_input("إزاحة أفقية (يمين/يسار)", -50.0, 50.0, 0.0, step=0.5, key="tx")
+    s_top_y = st.number_input("إزاحة رأسية (فوق/تحت)", -50.0, 50.0, 0.0, step=0.5, key="ty")
 
-with tab_bottom:
-    st.caption("ضبط الصف الثاني (الثلاثة كروت السفلى)")
-    s_bot_x = st.number_input("تحريك أفقي (Bottom X)", -50.0, 50.0, 0.0, step=0.5, key="bx")
-    s_bot_y = st.number_input("تحريك رأسي (Bottom Y)", -50.0, 50.0, 0.0, step=0.5, key="by")
+with tab_bot:
+    st.info("تحكم في الـ 3 كروت السفلية فقط")
+    s_bot_x = st.number_input("إزاحة أفقية (يمين/يسار)", -50.0, 50.0, 0.0, step=0.5, key="bx")
+    s_bot_y = st.number_input("إزاحة رأسية (فوق/تحت)", -50.0, 50.0, 0.0, step=0.5, key="by")
+
+with tab_page:
+    st.warning("هذا الإعداد للصفحة رقم 2 وما بعدها فقط")
+    st.markdown("إذا كانت الصفحة الثانية مطبوعة بشكل خاطئ، عدل هنا:")
+    s_next_corr = st.number_input("تصحيح بدء الصفحات التالية (مم)", -20.0, 20.0, 0.0, step=0.5, help="موجب يرفع الصفحة، سالب ينزلها")
 
 st.sidebar.markdown("---")
 st.sidebar.header("3. ضبط التصميم الداخلي")
-show_borders = st.sidebar.checkbox("إظهار حدود (للضبط)", False)
+show_borders = st.sidebar.checkbox("إظهار حدود (للمعايرة)", False)
 
-with st.sidebar.expander("📍 المسافات (بالمليمتر)", expanded=True):
-    # القيم الثابتة الافتراضية كما طلبت
-    s_yellow_start = st.slider("بداية الأصفر (من أعلى الكارت)", 40, 80, 50)
+with st.sidebar.expander("📍 المسافات (القيم الافتراضية من الصورة)", expanded=True):
+    # القيم الافتراضية كما في الصورة المرفقة image_aef33d.png
+    s_yellow_start = st.slider("بداية الأصفر (من أعلى الكارت)", 40, 80, 50) # Default 50
     
     st.caption("مواقع العناصر (من بداية الأصفر لأسفل):")
-    s_brand_pos = st.slider("موقع البراند", 2, 30, 10)
-    s_en_pos = st.slider("موقع الإنجليزي", 5, 50, 31)
-    s_ar_pos = st.slider("موقع العربي", 10, 60, 54)
-    s_offer_pos = st.slider("موقع العرض (الوسط)", 20, 80, 84)
-    s_bc_bottom = st.slider("الباركود من الأسفل", 2, 40, 15)
+    s_brand_pos = st.slider("موقع البراند", 2, 30, 6)    # Default 6
+    s_en_pos = st.slider("موقع الإنجليزي", 5, 50, 14)    # Default 14
+    s_ar_pos = st.slider("موقع العربي", 10, 60, 20)      # Default 20
+    s_offer_pos = st.slider("موقع العرض (الوسط)", 20, 80, 41) # Default 41
+    s_bc_bottom = st.slider("الباركود من الأسفل", 2, 40, 25)   # Default 25
 
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
     s_header_font = st.slider("اسم الصيدلية", 6, 14, 8)
@@ -251,6 +268,7 @@ with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
 user_settings = {
     'top_x_mm': s_top_x, 'top_y_mm': s_top_y,
     'bottom_x_mm': s_bot_x, 'bottom_y_mm': s_bot_y,
+    'next_pages_correction_mm': s_next_corr,
     
     'show_borders': show_borders,
     'yellow_start_mm': s_yellow_start,
@@ -308,7 +326,7 @@ if offers_file and stock_file:
                     st.image(pix.tobytes("png"), width=600)
                 with col_down:
                     full_pdf = generate_pdf(final_df, user_settings)
-                    st.download_button("📥 تحميل PDF", full_pdf, "Stable_Offers.pdf", "application/pdf")
+                    st.download_button("📥 تحميل PDF", full_pdf, "Offers_Total_Control.pdf", "application/pdf")
 
     except Exception as e:
         st.error(f"خطأ: {e}")
