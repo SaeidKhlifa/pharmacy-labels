@@ -44,7 +44,7 @@ def process_text(text, is_arabic=False):
 # ==========================================
 
 def draw_bold_centered(c, text, center_x, y, font_name, font_size, color_rgb=(0,0,0), stroke_width=0.7):
-    """رسم نص عريض (Bold)"""
+    """رسم نص عريض (Bold) في سطر واحد"""
     text_width = pdfmetrics.stringWidth(text, font_name, font_size)
     start_x = center_x - (text_width / 2)
     c.setStrokeColorRGB(*color_rgb)
@@ -56,17 +56,35 @@ def draw_bold_centered(c, text, center_x, y, font_name, font_size, color_rgb=(0,
     text_obj.setTextOrigin(start_x, y)
     text_obj.textOut(text)
     c.drawText(text_obj)
+    # إعادة الضبط
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
     c.setLineWidth(0)
 
 def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, line_spacing=4):
+    """رسم نص عادي متعدد الأسطر"""
     c.setFont(font_name, font_size)
     lines = simpleSplit(text, font_name, font_size, max_width)
     current_y = y
     for line in lines:
         c.drawCentredString(x, current_y, line)
         current_y -= (font_size + line_spacing)
+    return current_y
+
+def draw_bold_wrapped_text(c, text, center_x, y, max_width, font_name, font_size, color_rgb, stroke_width=1.0, line_spacing=4):
+    """
+    دالة جديدة: رسم نص عريض (Bold) ومتعدد الأسطر (Wrapped)
+    تستخدم للعروض الطويلة
+    """
+    # تقسيم النص إلى أسطر
+    lines = simpleSplit(text, font_name, font_size, max_width)
+    
+    current_y = y
+    # رسم كل سطر باستخدام دالة الـ Bold
+    for line in lines:
+        draw_bold_centered(c, line, center_x, current_y, font_name, font_size, color_rgb, stroke_width)
+        current_y -= (font_size + line_spacing)
+        
     return current_y
 
 def draw_label(c, x, y, w, h, row, settings):
@@ -85,24 +103,17 @@ def draw_label(c, x, y, w, h, row, settings):
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
         c.rect(x, y, w, h)
 
-    # ==========================================
-    # 1. المنطقة العلوية (البيضاء) - ثابتة
-    # ==========================================
-    # نضع اسم الصيدلية في أعلى الكارت بمسافة ثابتة (مثلاً 1 سم من الحافة العلوية)
-    header_y_position = (y + h) - 30  # 30 نقطة من الحافة العلوية
-    
+    # 1. المنطقة العلوية (البيضاء)
+    header_y_position = (y + h) - 30 
     c.setFillColorRGB(0.4, 0.4, 0.4) 
     c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     pharmacy_name = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
     c.drawCentredString(center_x, header_y_position, pharmacy_name)
 
-    # ==========================================
     # 2. منطقة المحتوى (الصفراء)
-    # ==========================================
-    # نبدأ الحساب من بعد الإزاحة التي يحددها المستخدم (لتخطي الأحمر)
     content_start_y = (y + h) - settings['top_offset_skip']
 
-    # أ. البراند (داخل الأصفر)
+    # أ. البراند
     current_y = content_start_y
     c.setFillColorRGB(0, 0, 0)
     if has_font:
@@ -128,16 +139,22 @@ def draw_label(c, x, y, w, h, row, settings):
     # هـ. مسافة قبل العرض
     current_y -= settings['spacing_ar_to_offer']
 
-    # و. العرض / السعر (داخل الأصفر)
+    # و. العرض / السعر (تم التعديل ليقبل سطرين)
     if has_font:
-        draw_bold_centered(c, str(offer_txt), center_x, current_y, FONT_NAME, settings['price_font_size'], (0.85, 0.21, 0.27), stroke_width=1.0)
+        # استخدام الدالة الجديدة التي تدعم التفاف النص مع الـ Bold
+        draw_bold_wrapped_text(c, str(offer_txt), center_x, current_y, max_text_width, FONT_NAME, settings['price_font_size'], (0.85, 0.21, 0.27), stroke_width=1.0)
     else:
+        # Fallback للخطوط العادية
         c.setFont("Helvetica-Bold", settings['price_font_size'])
         c.setFillColorRGB(0.85, 0.21, 0.27)
-        c.drawCentredString(center_x, current_y, str(offer_txt))
+        # تقسيم النص يدوياً للخطوط العادية
+        lines = simpleSplit(str(offer_txt), "Helvetica-Bold", settings['price_font_size'], max_text_width)
+        temp_y = current_y
+        for line in lines:
+            c.drawCentredString(center_x, temp_y, line)
+            temp_y -= (settings['price_font_size'] + 4)
 
-    # ز. الباركود (أسفل الأصفر)
-    # يتم حسابه من أسفل الورقة للأعلى
+    # ز. الباركود
     barcode_y = y + settings['barcode_bottom_margin']
     
     if item_code:
@@ -176,7 +193,7 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Yellow Zone Fix)")
+st.title("🏷️ Offers Generator Pro (Multi-line Offers)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing.")
@@ -190,12 +207,8 @@ st.sidebar.markdown("---")
 st.sidebar.header("2. ضبط المسافات")
 show_borders = st.sidebar.checkbox("حدود للتجربة", False)
 
-with st.sidebar.expander("📏 المسافات الرأسية (هام جداً)", expanded=True):
-    st.info("قم بزيادة 'بداية الكلام' لإنزاله للمنطقة الصفراء")
-    
-    # تم زيادة الحد الأقصى إلى 250 وتغيير الافتراضي إلى 190 (حوالي 6.7 سم)
-    s_top_offset = st.slider("بداية الكلام (تخطي الأبيض والأحمر)", 0, 250, 190, help="هذا يحدد أين يبدأ اسم البراند. زده لينزل للأصفر.")
-    
+with st.sidebar.expander("📏 المسافات الرأسية", expanded=True):
+    s_top_offset = st.slider("بداية الكلام (تخطي الأبيض والأحمر)", 0, 250, 190)
     s_brand_name_gap = st.slider("مسافة: براند -> إنجليزي", 5, 50, 20)
     s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي", 5, 60, 15)
     s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 60)
@@ -204,7 +217,7 @@ with st.sidebar.expander("📏 المسافات الرأسية (هام جداً)
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
     s_header_font = st.slider("حجم اسم الصيدلية", 6, 14, 8)
     s_brand_font = st.slider("حجم البراند", 10, 24, 14)
-    s_name_font = st.slider("حجم اسم الصنف", 8, 20, 10) # صغرته قليلاً ليناسب المساحة
+    s_name_font = st.slider("حجم اسم الصنف", 8, 20, 10)
     s_price_font = st.slider("حجم العرض", 10, 60, 24)
     s_bc_h = st.slider("طول خطوط الباركود", 10, 50, 25)
     s_bc_font = st.slider("رقم الباركود", 6, 14, 10)
@@ -234,39 +247,4 @@ if offers_file and stock_file:
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
         final_df = merged[merged['Quantity'] >= min_qty].copy()
 
-        if final_df.empty:
-            st.error("لا توجد أصناف.")
-        else:
-            st.subheader("🔍 الفلتر")
-            c1, c2, c3 = st.columns(3)
-            cats = ['All'] + sorted(list(final_df['Category'].dropna().unique()))
-            brands = ['All'] + sorted(list(final_df['Brand'].dropna().unique()))
-            offers_list = ['All'] + sorted(list(final_df['Offer Description EN'].astype(str).dropna().unique()))
-
-            sel_cat = c1.selectbox("القسم", cats)
-            sel_brand = c2.selectbox("البراند", brands)
-            sel_offer = c3.selectbox("العرض", offers_list)
-
-            if sel_cat != 'All': final_df = final_df[final_df['Category'] == sel_cat]
-            if sel_brand != 'All': final_df = final_df[final_df['Brand'] == sel_brand]
-            if sel_offer != 'All': final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
-            
-            st.success(f"العدد: {len(final_df)}")
-            
-            if st.button("👁️ معاينة", type="primary"):
-                preview_pdf = generate_pdf(final_df.head(6), user_settings)
-                st.session_state['preview_pdf'] = preview_pdf
-            
-            if 'preview_pdf' in st.session_state:
-                st.markdown("---")
-                col_prev, col_down = st.columns([2, 1])
-                with col_prev:
-                    doc = fitz.open(stream=st.session_state['preview_pdf'].getvalue(), filetype="pdf")
-                    pix = doc.load_page(0).get_pixmap(dpi=150)
-                    st.image(pix.tobytes("png"), width=600)
-                with col_down:
-                    full_pdf = generate_pdf(final_df, user_settings)
-                    st.download_button("📥 تحميل PDF", full_pdf, "Offers.pdf", "application/pdf")
-
-    except Exception as e:
-        st.error(f"خطأ: {e}")
+        if final_df.
