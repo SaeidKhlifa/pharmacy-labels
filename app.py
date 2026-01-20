@@ -14,13 +14,13 @@ from bidi.algorithm import get_display
 # ==========================================
 # 1. إعدادات النظام والتحويلات
 # ==========================================
-st.set_page_config(page_title="Offers Generator Pro (Split Control)", layout="wide", page_icon="🖨️")
+st.set_page_config(page_title="Offers Generator Pro (Fixed Alignment)", layout="wide", page_icon="🖨️")
 
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
 
 def mm2p(mm):
-    """تحويل من مليمتر إلى نقاط"""
+    """تحويل من مليمتر إلى نقاط بدقة عالية"""
     return mm * 2.83465
 
 def setup_fonts():
@@ -43,10 +43,11 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. دوال الرسم الذكية
+# 2. دوال الرسم (معزولة وثابتة)
 # ==========================================
 
 def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_size, min_font_size=6, color=(0,0,0), is_bold=False):
+    """رسم نص ذكي يقوم بتصغير نفسه ليدخل في الصندوق"""
     current_size = max_font_size
     text_width = pdfmetrics.stringWidth(text, font_name, current_size)
     
@@ -60,7 +61,7 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
     if is_bold:
         c.setLineWidth(0.5 if current_size < 12 else 0.8)
         text_obj = c.beginText()
-        text_obj.setTextRenderMode(2) 
+        text_obj.setTextRenderMode(2) # Fill + Stroke
         text_obj.setFont(font_name, current_size)
         start_x = center_x - (text_width / 2)
         text_obj.setTextOrigin(start_x, y)
@@ -71,10 +72,12 @@ def draw_text_auto_shrink(c, text, center_x, y, max_width, font_name, max_font_s
         c.setFont(font_name, current_size)
         c.drawCentredString(center_x, y, text)
     
+    # إعادة تعيين الألوان للأسود لتجنب التأثير على العناصر التالية
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
 
 def draw_label(c, x, y, w, h, row, settings):
+    """رسم كارت واحد في مكان محدد"""
     item_code = str(row.get('Item Number', '')).replace('.0', '')
     desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
@@ -84,7 +87,7 @@ def draw_label(c, x, y, w, h, row, settings):
     center_x = x + (w / 2)
     max_text_width = w * 0.92
 
-    # --- منطقة الأمان (لتوضيح الحدود) ---
+    # --- منطقة الحدود (للتجربة) ---
     if settings['show_borders']:
         c.setLineWidth(0.5)
         c.setStrokeColorRGB(0.8, 0.8, 0.8)
@@ -160,27 +163,33 @@ def generate_pdf(df, settings):
     block_w, block_h = page_w / cols, page_h / rows
     
     for i, (_, row) in enumerate(df.iterrows()):
+        # إدارة الصفحات الجديدة
         if i > 0 and i % (cols * rows) == 0:
-            c.showPage()
+            c.showPage() # إعادة ضبط الإحداثيات للصفحة الجديدة
         
+        # حساب الموقع
         pos = i % (cols * rows)
         col_idx = pos % cols
-        row_idx = pos // cols # 0 للصف العلوي، 1 للصف السفلي
+        row_idx = pos // cols 
         
         base_x = col_idx * block_w
         base_y = page_h - ((row_idx + 1) * block_h)
         
-        # === تطبيق الإزاحات المنفصلة ===
+        # حساب الإزاحة الخاصة بكل نصف
         if row_idx == 0:
-            # الصف العلوي
             final_x = base_x + mm2p(settings['top_x_mm'])
             final_y = base_y + mm2p(settings['top_y_mm'])
         else:
-            # الصف السفلي (إعدادات منفصلة)
             final_x = base_x + mm2p(settings['bottom_x_mm'])
             final_y = base_y + mm2p(settings['bottom_y_mm'])
         
+        # === هام جداً: عزل الحالة (State Isolation) ===
+        # هذا الأمر يحفظ حالة الصفحة قبل الرسم ويستعيدها بعده
+        # مما يمنع أي تداخل أو انحراف في القياسات بين الكروت
+        c.saveState()
         draw_label(c, final_x, final_y, block_w, block_h, row, settings)
+        c.restoreState()
+        # ============================================
         
     c.save()
     buffer.seek(0)
@@ -189,12 +198,12 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🖨️ Offers Generator Pro (Split Control)")
+st.title("🖨️ Offers Generator Pro (Stable Alignment)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing.")
 
-# --- القائمة الجانبية ---
+# القائمة الجانبية
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون", type=['xlsx'])
@@ -202,18 +211,17 @@ min_qty = st.sidebar.number_input("أقل كمية", 2, 100, 2)
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. 🎚️ معايرة الطابعة (Printer Calibration)")
-st.sidebar.info("تحكم منفصل لكل نصف من الورقة (بالمليمتر).")
+st.sidebar.info("القيم هنا بالميليمتر. استخدمها لضبط الطباعة على الورق.")
 
-# علامات تبويب للتحكم المنفصل
 tab_top, tab_bottom = st.sidebar.tabs(["⬆️ النصف العلوي", "⬇️ النصف السفلي"])
 
 with tab_top:
-    st.caption("ضبط الصف الأول من الكروت")
+    st.caption("ضبط الصف الأول (الثلاثة كروت العليا)")
     s_top_x = st.number_input("تحريك أفقي (Top X)", -50.0, 50.0, 0.0, step=0.5, key="tx")
     s_top_y = st.number_input("تحريك رأسي (Top Y)", -50.0, 50.0, 0.0, step=0.5, key="ty")
 
 with tab_bottom:
-    st.caption("ضبط الصف الثاني من الكروت")
+    st.caption("ضبط الصف الثاني (الثلاثة كروت السفلى)")
     s_bot_x = st.number_input("تحريك أفقي (Bottom X)", -50.0, 50.0, 0.0, step=0.5, key="bx")
     s_bot_y = st.number_input("تحريك رأسي (Bottom Y)", -50.0, 50.0, 0.0, step=0.5, key="by")
 
@@ -222,14 +230,15 @@ st.sidebar.header("3. ضبط التصميم الداخلي")
 show_borders = st.sidebar.checkbox("إظهار حدود (للضبط)", False)
 
 with st.sidebar.expander("📍 المسافات (بالمليمتر)", expanded=True):
+    # القيم الثابتة الافتراضية كما طلبت
     s_yellow_start = st.slider("بداية الأصفر (من أعلى الكارت)", 40, 80, 50)
     
     st.caption("مواقع العناصر (من بداية الأصفر لأسفل):")
-    s_brand_pos = st.slider("موقع البراند", 2, 30, 5)
-    s_en_pos = st.slider("موقع الإنجليزي", 5, 50, 15)
-    s_ar_pos = st.slider("موقع العربي", 10, 60, 25)
-    s_offer_pos = st.slider("موقع العرض (الوسط)", 20, 80, 40)
-    s_bc_bottom = st.slider("الباركود من الأسفل", 2, 40, 8)
+    s_brand_pos = st.slider("موقع البراند", 2, 30, 10)
+    s_en_pos = st.slider("موقع الإنجليزي", 5, 50, 31)
+    s_ar_pos = st.slider("موقع العربي", 10, 60, 54)
+    s_offer_pos = st.slider("موقع العرض (الوسط)", 20, 80, 84)
+    s_bc_bottom = st.slider("الباركود من الأسفل", 2, 40, 15)
 
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
     s_header_font = st.slider("اسم الصيدلية", 6, 14, 8)
@@ -299,7 +308,7 @@ if offers_file and stock_file:
                     st.image(pix.tobytes("png"), width=600)
                 with col_down:
                     full_pdf = generate_pdf(final_df, user_settings)
-                    st.download_button("📥 تحميل PDF", full_pdf, "Offers_Final.pdf", "application/pdf")
+                    st.download_button("📥 تحميل PDF", full_pdf, "Stable_Offers.pdf", "application/pdf")
 
     except Exception as e:
         st.error(f"خطأ: {e}")
