@@ -41,8 +41,36 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. محرك رسم PDF
+# 2. محرك رسم PDF (تم إصلاح دالة Bold)
 # ==========================================
+
+def draw_bold_centered(c, text, center_x, y, font_name, font_size, color_rgb=(0,0,0), stroke_width=0.7):
+    """
+    دالة مساعدة لرسم نص عريض (Faux Bold) باستخدام TextObject لتجنب الأخطاء.
+    """
+    # حساب عرض النص لتحديد نقطة البداية (للتوسيط)
+    text_width = pdfmetrics.stringWidth(text, font_name, font_size)
+    start_x = center_x - (text_width / 2)
+    
+    # إعداد الألوان والسمك للحدود الخارجية (Stroke)
+    c.setStrokeColorRGB(*color_rgb)
+    c.setFillColorRGB(*color_rgb)
+    c.setLineWidth(stroke_width)
+    
+    # إنشاء كائن النص
+    text_obj = c.beginText()
+    text_obj.setTextRenderMode(2)  # 2 = Fill + Stroke (تعبئة + حدود) -> يعطي تأثير Bold
+    text_obj.setFont(font_name, font_size)
+    text_obj.setTextOrigin(start_x, y)
+    text_obj.textOut(text)
+    
+    # رسم النص على اللوحة
+    c.drawText(text_obj)
+    
+    # إعادة اللوحة للوضع الطبيعي (لتجنب التأثير على النصوص الأخرى)
+    c.setFillColorRGB(0, 0, 0)
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(0)
 
 def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, line_spacing=4):
     """دالة لكتابة نص طويل مع التفاف للأسطر"""
@@ -83,23 +111,15 @@ def draw_label(c, x, y, w, h, row, settings):
     
     current_y -= settings['spacing_header_to_brand']
 
-    # 2. البراند (BOLD)
-    c.setFillColorRGB(0, 0, 0)
-    
+    # 2. البراند (BOLD - تم الإصلاح)
+    # نستخدم الدالة الجديدة draw_bold_centered
     if has_font:
-        # تفعيل الـ Bold اليدوي للخطوط العربية
-        c.setFont(FONT_NAME, settings['brand_font_size'])
-        c.setTextRenderMode(2) # وضع التعبئة + الحدود
-        c.setLineWidth(0.7)    # سمك التغليظ
-        c.setStrokeColorRGB(0, 0, 0) # لون الحدود (أسود)
+        draw_bold_centered(c, str(brand_txt), center_x, current_y, FONT_NAME, settings['brand_font_size'], (0,0,0), stroke_width=0.7)
     else:
+        # Fallback إذا لم يوجد خط عربي
         c.setFont("Helvetica-Bold", settings['brand_font_size'])
-
-    c.drawCentredString(center_x, current_y, str(brand_txt))
-    
-    # إعادة الوضع الطبيعي
-    c.setTextRenderMode(0) 
-    c.setLineWidth(0)
+        c.setFillColorRGB(0, 0, 0)
+        c.drawCentredString(center_x, current_y, str(brand_txt))
 
     current_y -= settings['spacing_brand_to_name']
 
@@ -118,22 +138,13 @@ def draw_label(c, x, y, w, h, row, settings):
     # 6. مسافة قبل العرض
     current_y -= settings['spacing_ar_to_offer']
 
-    # 7. العرض / السعر (BOLD RED)
-    c.setFillColorRGB(0.85, 0.21, 0.27) # أحمر
-    
+    # 7. العرض / السعر (BOLD RED - تم الإصلاح)
     if has_font:
-        c.setFont(FONT_NAME, settings['price_font_size'])
-        c.setTextRenderMode(2) # وضع التعبئة + الحدود
-        c.setLineWidth(1)      # سمك التغليظ (أقوى قليلاً للسعر)
-        c.setStrokeColorRGB(0.85, 0.21, 0.27) # لون الحدود (أحمر)
+        draw_bold_centered(c, str(offer_txt), center_x, current_y, FONT_NAME, settings['price_font_size'], (0.85, 0.21, 0.27), stroke_width=1.0)
     else:
         c.setFont("Helvetica-Bold", settings['price_font_size'])
-
-    c.drawCentredString(center_x, current_y, str(offer_txt))
-
-    # إعادة الوضع الطبيعي
-    c.setTextRenderMode(0)
-    c.setLineWidth(0)
+        c.setFillColorRGB(0.85, 0.21, 0.27)
+        c.drawCentredString(center_x, current_y, str(offer_txt))
 
     # 8. الباركود
     barcode_y = y + settings['barcode_bottom_margin']
@@ -174,7 +185,7 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Bold & Aligned)")
+st.title("🏷️ Offers Generator Pro (Bold Fixed)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing. Arabic will look broken.")
@@ -191,7 +202,6 @@ show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
 
 with st.sidebar.expander("📏 المسافات (المحور الرأسي)", expanded=True):
     st.info("ملاحظة: 28 نقطة ≈ 1 سم")
-    # === القيم الافتراضية من الصورة ===
     s_top_offset = st.slider("إزاحة علوية (لتخطي الهيدر الأحمر)", 0, 100, 40)
     s_head_brand_gap = st.slider("مسافة: صيدلية -> براند", 5, 80, 50)
     s_brand_name_gap = st.slider("مسافة: براند -> اسم إنجليزي", 5, 50, 25)
