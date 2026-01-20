@@ -10,15 +10,16 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics.barcode import code128
 import arabic_reshaper
 from bidi.algorithm import get_display
+from PIL import Image
 
 # ==========================================
 # 1. الثوابت والأبعاد (سم) - Hardcoded
 # ==========================================
-DIM_ROW1_TOP_CM = 7.7    # بداية الأصفر العلوي
-DIM_ROW2_TOP_CM = 22.5   # بداية الأصفر السفلي
-DIM_YELLOW_H_CM = 7.5    # ارتفاع المنطقة الصفراء
-DIM_CARD_W_CM = 7.0      # عرض المنطقة الصفراء
-DIM_GAP_CM = 0.7         # الفاصل بين الأعمدة
+DIM_ROW1_TOP_CM = 7.7    
+DIM_ROW2_TOP_CM = 22.5   
+DIM_YELLOW_H_CM = 7.5    
+DIM_CARD_W_CM = 7.0      
+DIM_GAP_CM = 0.7         
 
 # الأبعاد الداخلية
 POS_BRAND_Y_CM = 0.6
@@ -26,25 +27,32 @@ POS_EN_Y_CM = 1.6
 POS_AR_Y_CM = 2.6
 POS_BARCODE_BOTTOM_CM = 0.8
 
-# إعدادات الخطوط
+# إعدادات الملفات
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
+TEMPLATE_PATH = "template.png" # اسم ملف صورة الخلفية
 
-st.set_page_config(page_title="Offers Generator (Dynamic Filters)", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Offers Generator (Live Preview)", layout="wide", page_icon="👁️")
 
 def cm2p(cm):
     return cm * 28.3465
 
-def setup_fonts():
+def setup_resources():
+    # التحقق من الخط
+    font_ok = False
     if os.path.exists(FONT_PATH):
         try:
             pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH))
-            return True
+            font_ok = True
         except:
-            return False
-    return False
+            pass
+            
+    # التحقق من صورة القالب
+    template_ok = os.path.exists(TEMPLATE_PATH)
+    
+    return font_ok, template_ok
 
-has_font = setup_fonts()
+has_font, has_template = setup_resources()
 
 def process_text(text, is_arabic=False):
     if pd.isna(text) or text == "": return ""
@@ -122,7 +130,7 @@ def draw_card_content(c, row):
     offer_y = -(height / 2) - 5 
     if has_font:
         draw_text_auto_shrink(c, str(offer_txt), center_x, offer_y, max_text_width, 
-                              FONT_NAME, 20, min_font_size=12, 
+                              FONT_NAME, 24, min_font_size=12, 
                               color=(0.85, 0.21, 0.27), is_bold=True)
     else:
         c.setFont("Helvetica-Bold", 24)
@@ -144,7 +152,12 @@ def draw_card_content(c, row):
         except:
             pass
 
-def generate_pdf(df):
+def generate_pdf(df, preview_mode=False):
+    """
+    إنشاء ملف PDF.
+    preview_mode=True: ينشئ صفحة واحدة فقط ويضع صورة القالب كخلفية.
+    preview_mode=False: ينشئ ملف الطباعة النهائي بدون خلفية.
+    """
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     page_w_pt, page_h_pt = A4 
@@ -157,9 +170,21 @@ def generate_pdf(df):
     cols = 3
     cards_per_page = 6
     
-    for i, (_, row) in enumerate(df.iterrows()):
+    # إذا كنا في وضع المعاينة، نأخذ أول 6 كروت فقط
+    if preview_mode:
+        df_to_process = df.head(cards_per_page)
+    else:
+        df_to_process = df
+        
+    for i, (_, row) in enumerate(df_to_process.iterrows()):
         if i > 0 and i % cards_per_page == 0:
             c.showPage()
+            
+        # في بداية كل صفحة، إذا كنا في وضع المعاينة، نرسم الخلفية
+        if preview_mode and (i % cards_per_page == 0):
+            if has_template:
+                # رسم صورة القالب لتملأ الصفحة بالكامل
+                c.drawImage(TEMPLATE_PATH, 0, 0, width=page_w_pt, height=page_h_pt)
         
         pos_in_page = i % cards_per_page
         col_idx = pos_in_page % cols
@@ -181,13 +206,29 @@ def generate_pdf(df):
     buffer.seek(0)
     return buffer
 
+def create_preview_image(df):
+    """إنشاء صورة معاينة من أول صفحة PDF مع الخلفية"""
+    # 1. إنشاء PDF صفحة واحدة مع الخلفية
+    pdf_buffer = generate_pdf(df, preview_mode=True)
+    
+    # 2. تحويل PDF إلى صورة عالية الدقة
+    doc = fitz.open(stream=pdf_buffer.getvalue(), filetype="pdf")
+    page = doc.load_page(0)
+    pix = page.get_pixmap(dpi=150) # دقة 150 مناسبة للعرض
+    
+    # 3. تحويل Pixmap إلى تنسيق يمكن عرضه في Streamlit
+    img_data = pix.tobytes("png")
+    return img_data
+
 # ==========================================
-# 3. الواجهة (منطق الفلترة الديناميكي)
+# 3. الواجهة
 # ==========================================
-st.title("🖨️ Offers Generator (Dynamic Filtering)")
+st.title("🖨️ Offers Generator (Live Preview on Template)")
 
 if not has_font:
-    st.error("⚠️ ملف الخط `arial.ttf` مفقود! اللغة العربية لن تظهر.")
+    st.warning("⚠️ ملف الخط `arial.ttf` مفقود! اللغة العربية لن تظهر.")
+if not has_template:
+    st.error(f"⚠️ ملف صورة القالب `{TEMPLATE_PATH}` مفقود! المعاينة الحية لن تعمل.")
 
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض (Excel)", type=['xlsx'])
@@ -196,7 +237,6 @@ min_qty = st.sidebar.number_input("أقل كمية للطباعة", 1, 100, 2)
 
 if offers_file and stock_file:
     try:
-        # 1. قراءة البيانات ودمجها
         df1 = pd.read_excel(offers_file)
         df2 = pd.read_excel(stock_file)
         
@@ -205,61 +245,66 @@ if offers_file and stock_file:
         
         merged = pd.merge(df1, df2[['Item Number', 'Quantity']], on='Item Number', how='left')
         
-        # DataFrame الأساسي بعد فلتر الكمية
         base_df = merged[merged['Quantity'] >= min_qty].copy()
 
         if base_df.empty:
             st.warning("لا توجد أصناف تحقق شرط الكمية.")
         else:
             st.markdown("---")
-            st.subheader("🔍 الفلاتر الديناميكية (Cascading Filters)")
+            st.subheader("🔍 الفلاتر الديناميكية")
             
             c1, c2, c3 = st.columns(3)
 
-            # --- الخطوة 1: اختيار القسم (Category) ---
-            # نحصل على كل الأقسام المتاحة
             all_cats = ['All'] + sorted(list(base_df['Category'].astype(str).unique()))
             sel_cat = c1.selectbox("1. القسم (Category)", all_cats)
             
-            # نفلتر البيانات بناءً على القسم المختار
             if sel_cat == 'All':
                 df_after_cat = base_df
             else:
                 df_after_cat = base_df[base_df['Category'].astype(str) == sel_cat]
 
-            # --- الخطوة 2: اختيار البراند (Brand) ---
-            # القائمة هنا تعتمد على (df_after_cat) وليس (base_df)
             available_brands = ['All'] + sorted(list(df_after_cat['Brand'].astype(str).unique()))
             sel_brand = c2.selectbox("2. البراند (Brand)", available_brands)
             
-            # نفلتر البيانات بناءً على البراند المختار
             if sel_brand == 'All':
                 df_after_brand = df_after_cat
             else:
                 df_after_brand = df_after_cat[df_after_cat['Brand'].astype(str) == sel_brand]
 
-            # --- الخطوة 3: اختيار العرض (Offer) ---
-            # القائمة هنا تعتمد على (df_after_brand)
             available_offers = ['All'] + sorted(list(df_after_brand['Offer Description EN'].astype(str).unique()))
             sel_offer = c3.selectbox("3. العرض (Offer)", available_offers)
             
-            # نفلتر البيانات بناءً على العرض المختار (النتيجة النهائية)
             if sel_offer == 'All':
                 final_df = df_after_brand
             else:
                 final_df = df_after_brand[df_after_brand['Offer Description EN'].astype(str) == sel_offer]
 
-            # --- العرض والتحميل ---
             st.info(f"العدد النهائي للطباعة: {len(final_df)}")
             
             if not final_df.empty:
-                pdf_data = generate_pdf(final_df)
+                # زر المعاينة
+                if has_template:
+                    if st.button("👁️ معاينة حية على القالب", type="primary"):
+                        with st.spinner("جاري إنشاء المعاينة..."):
+                            # إنشاء صورة المعاينة
+                            preview_img = create_preview_image(final_df)
+                            st.session_state['preview_img'] = preview_img
+                
+                # عرض المعاينة إذا كانت موجودة في الذاكرة
+                if 'preview_img' in st.session_state:
+                    st.markdown("---")
+                    st.subheader("معاينة الطباعة (أول صفحة)")
+                    st.image(st.session_state['preview_img'], caption="هكذا ستظهر الطباعة على الورق", use_column_width=True, output_format="PNG")
+                    st.markdown("---")
+
+                # زر التحميل النهائي
+                # نولد PDF الطباعة (بدون خلفية)
+                pdf_data = generate_pdf(final_df, preview_mode=False)
                 st.download_button(
-                    label="📥 تحميل ملف الطباعة (PDF)",
+                    label="📥 تحميل ملف الطباعة النهائي (PDF)",
                     data=pdf_data,
-                    file_name="Dynamic_Filtered_Offers.pdf",
+                    file_name="Final_Print_Offers.pdf",
                     mime="application/pdf",
-                    type="primary"
                 )
             else:
                 st.warning("لا توجد نتائج.")
