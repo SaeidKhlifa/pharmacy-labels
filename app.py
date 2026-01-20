@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import io
+import os
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
@@ -7,196 +9,208 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics.barcode import code128
 import arabic_reshaper
 from bidi.algorithm import get_display
-import io
-import os
 
-# --- إعدادات الصفحة ---
-st.set_page_config(page_title="مولد ملصقات العروض", page_icon="🏷️")
-st.title("🏷️ برنامج طباعة ملصقات العروض")
+# ==========================================
+# 1. CONFIGURATION & FONTS
+# ==========================================
+st.set_page_config(page_title="Offers Generator Pro", layout="wide", page_icon="🏷️")
 
-# --- القائمة الجانبية: التحكم في الخطوط ---
-st.sidebar.header("🔠 إعدادات حجم الخط")
-name_font_size = st.sidebar.number_input("حجم خط اسم الصنف", value=11, min_value=5, max_value=25, step=1)
-offer_font_size = st.sidebar.number_input("حجم خط العرض/السعر", value=30, min_value=10, max_value=60, step=1)
-
-# --- إعدادات الإزاحة الثابتة ---
-TOP_LOGO_SHIFT = 15       
-TOP_CONTENT_SHIFT = -10   
-BOTTOM_LOGO_SHIFT = 0     
-BOTTOM_CONTENT_SHIFT = -20 
-
-# --- تعريف الخطوط ---
-FONT_NAME = "CustomFont"
-FONT_BOLD = "CustomFontBold"
+FONT_PATH = "arial.ttf"  # Ensure this file exists in the directory
+FONT_NAME = "CustomArial"
 
 def setup_fonts():
+    """Registers the font for Arabic support."""
     try:
-        if os.path.exists("arial.ttf"):
-            pdfmetrics.registerFont(TTFont(FONT_NAME, "arial.ttf"))
+        if os.path.exists(FONT_PATH):
+            pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH))
+            return True
         else:
-            st.warning("⚠️ ملف arial.ttf غير موجود.")
-            
-        if os.path.exists("arialbd.ttf"):
-            pdfmetrics.registerFont(TTFont(FONT_BOLD, "arialbd.ttf")) 
-        else:
-             if os.path.exists("arial.ttf"):
-                pdfmetrics.registerFont(TTFont(FONT_BOLD, "arial.ttf"))
-    except Exception as e:
-        st.error(f"خطأ في الخطوط: {e}")
+            return False
+    except Exception:
+        return False
 
-def process_arabic(text):
-    if not text or pd.isna(text): return ""
+has_font = setup_fonts()
+
+def process_text(text, is_arabic=False):
+    """Handles Arabic reshaping and bidi algorithm."""
+    if pd.isna(text) or text == "":
+        return ""
     text = str(text)
-    reshaped = arabic_reshaper.reshape(text)
-    return get_display(reshaped)
+    if is_arabic and has_font:
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    return text
 
-def clean_offer_value(raw_value):
-    str_val = str(raw_value).strip()
-    try:
-        float_val = float(str_val)
-        if 0 < float_val < 1:
-            percentage = float_val * 100
-            if percentage.is_integer(): return str(int(percentage)), True
-            return str(round(percentage, 1)), True
-        if float_val.is_integer(): return str(int(float_val)), True
-        return str(float_val), True
-    except ValueError:
-        return str_val, False
-
-def draw_block(c, x, y, width, height, data, row_index):
-    center_x = x + (width / 2)
+# ==========================================
+# 2. PDF GENERATION ENGINE
+# ==========================================
+def draw_label(c, x, y, w, h, row):
+    """Draws a single label at coordinates x, y."""
+    # Data Extraction (Using Column Names from your Excel)
+    item_code = str(row.get('Item Number', '')).replace('.0', '')
+    desc_en = row.get('Item Description EN', '')[:35] # Truncate if too long
+    desc_ar = row.get('Item Description AR', '')
+    offer_txt = row.get('Offer Description EN', '')
     
-    if row_index == 0:
-        current_logo_shift = TOP_LOGO_SHIFT
-        current_content_shift = TOP_CONTENT_SHIFT
-    else:
-        current_logo_shift = BOTTOM_LOGO_SHIFT
-        current_content_shift = BOTTOM_CONTENT_SHIFT
-
-    # 1. رسم الشعار
-    brand_ar = process_arabic("الدواء")
-    c.setFont(FONT_BOLD, 18)
-    logo_y_pos = y + (height * 0.83) + current_logo_shift
-    c.drawCentredString(center_x, logo_y_pos, f"al-dawaa | {brand_ar}")
-
-    # نقطة ارتكاز المحتوى
-    yellow_center_y = y + (height * 0.38) + current_content_shift
-
-    # --- استخراج البيانات بناءً على ترتيب الأعمدة (Index) وليس الاسم ---
-    # iloc[0] = العمود الأول (الكود)
-    # iloc[1] = العمود الثاني (الاسم العربي)
-    # iloc[2] = العمود الثالث (الاسم الإنجليزي)
-    # iloc[3] = العمود الرابع (العرض)
-
-    # 2. الاسم الإنجليزي (العمود الثالث - رقم 2)
-    item_en = str(data.iloc[2])[:28] if len(data) > 2 else ""
-    if item_en == 'nan': item_en = ""
-    c.setFont(FONT_NAME, name_font_size)
-    c.drawCentredString(center_x, yellow_center_y + 45, item_en)
-
-    # 3. الاسم العربي (العمود الثاني - رقم 1)
-    item_ar_raw = data.iloc[1] if len(data) > 1 else ""
-    item_ar = process_arabic(item_ar_raw)
-    c.setFont(FONT_NAME, name_font_size)
-    c.drawCentredString(center_x, yellow_center_y + 25, item_ar)
-
-    # 4. العرض (العمود الرابع - رقم 3)
-    offer_raw = data.iloc[3] if len(data) > 3 else ""
-    clean_val, is_number = clean_offer_value(offer_raw)
+    # Coordinates Calculation
+    center_x = x + (w / 2)
     
-    if is_number:
-        offer_en = f"{clean_val}% off"
-        offer_ar = process_arabic(f"خصم {clean_val}%")
-    else:
-        offer_en = clean_val
-        offer_ar = process_arabic(clean_val)
-
-    # رسم العرض بالإنجليزية
-    c.setFont(FONT_BOLD, offer_font_size)
-    c.drawCentredString(center_x, yellow_center_y - 20, offer_en)
+    # 1. Header
+    c.setLineWidth(0.5)
+    c.rect(x, y, w, h) # Border
     
-    # رسم العرض بالعربية
-    if is_number:
-        arabic_offer_size = int(offer_font_size * 0.6)
-        c.setFont(FONT_BOLD, arabic_offer_size)
-        c.drawCentredString(center_x, yellow_center_y - 45, offer_ar)
-
-    # 5. الباركود (العمود الأول - رقم 0)
-    raw_code = str(data.iloc[0]).replace('.0', '') if len(data) > 0 else ""
-    if raw_code == 'nan': raw_code = ""
-
-    barcode_y = yellow_center_y - 85
-    if raw_code:
+    c.setFont(FONT_NAME if has_font else "Helvetica", 8)
+    c.setFillColorRGB(0.4, 0.4, 0.4)
+    header_text = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
+    c.drawCentredString(center_x, y + h - 15, header_text)
+    
+    # 2. English Name
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont(FONT_NAME if has_font else "Helvetica", 11)
+    c.drawCentredString(center_x, y + h - 35, str(desc_en))
+    
+    # 3. Arabic Name
+    c.setFont(FONT_NAME if has_font else "Helvetica", 11)
+    ar_text = process_text(desc_ar, is_arabic=True)
+    c.drawCentredString(center_x, y + h - 50, ar_text)
+    
+    # 4. The Offer (Big Red Text)
+    c.setFont(FONT_NAME if has_font else "Helvetica-Bold", 24)
+    c.setFillColorRGB(0.85, 0.21, 0.27) # Red Color
+    c.drawCentredString(center_x, y + (h/2) - 5, str(offer_txt))
+    
+    # 5. Barcode & Number
+    if item_code:
         try:
-            barcode = code128.Code128(raw_code, barHeight=25, barWidth=1.2)
-            barcode.drawOn(c, center_x - (barcode.width/2), barcode_y)
-            c.setFont(FONT_NAME, 10)
-            c.drawCentredString(center_x, barcode_y - 12, raw_code)
+            # Draw Barcode
+            barcode = code128.Code128(item_code, barHeight=25, barWidth=1.2)
+            # Center the barcode
+            bc_x = center_x - (barcode.width / 2)
+            barcode.drawOn(c, bc_x, y + 25)
+            
+            # Draw Number below barcode
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont("Helvetica", 10)
+            c.drawCentredString(center_x, y + 15, item_code)
         except:
-            c.drawCentredString(center_x, barcode_y, raw_code)
+            pass
 
-def create_pdf(df):
+def generate_pdf(df):
+    """Main loop to create PDF pages."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
-    setup_fonts()
     
-    PAGE_WIDTH, PAGE_HEIGHT = A4
-    MARGIN_X, MARGIN_Y = 20, 20
-    COLS, ROWS = 3, 2
-    BLOCK_WIDTH = (PAGE_WIDTH - (2 * MARGIN_X)) / COLS
-    BLOCK_HEIGHT = (PAGE_HEIGHT - (2 * MARGIN_Y)) / ROWS
-
-    col_counter = 0
-    row_counter = 0
+    page_w, page_h = A4
+    margin = 20
+    cols = 3
+    rows = 2
     
-    for _, row in df.iterrows():
-        x_pos = MARGIN_X + (col_counter * BLOCK_WIDTH)
-        y_pos = PAGE_HEIGHT - MARGIN_Y - ((row_counter + 1) * BLOCK_HEIGHT)
-        
-        draw_block(c, x_pos, y_pos, BLOCK_WIDTH, BLOCK_HEIGHT, row, row_counter)
-        
-        col_counter += 1
-        if col_counter >= COLS:
-            col_counter = 0
-            row_counter += 1
-        if row_counter >= ROWS:
+    block_w = (page_w - (2 * margin)) / cols
+    block_h = (page_h - (2 * margin)) / rows
+    
+    for i, (_, row) in enumerate(df.iterrows()):
+        # Check if we need a new page
+        if i > 0 and i % (cols * rows) == 0:
             c.showPage()
-            col_counter, row_counter = 0, 0
             
+        # Calculate Position
+        pos_on_page = i % (cols * rows)
+        col_idx = pos_on_page % cols
+        row_idx = pos_on_page // cols
+        
+        # X grows left to right, Y grows bottom to top in PDF
+        x = margin + (col_idx * block_w)
+        # Invert row index for top-to-bottom filling
+        y = page_h - margin - ((row_idx + 1) * block_h)
+        
+        draw_label(c, x, y, block_w, block_h, row)
+        
     c.save()
     buffer.seek(0)
     return buffer
 
-# --- الواجهة ---
-st.write("### 📂 تعليمات الملف")
-st.info("""
-**ملاحظة هامة:** لا يهم اسم الأعمدة في الملف، ولكن **يجب** أن يكون ترتيب البيانات كالتالي:
-1. العمود الأول: **كود الصنف** (Code)
-2. العمود الثاني: **الاسم العربي**
-3. العمود الثالث: **الاسم الإنجليزي**
-4. العمود الرابع: **قيمة العرض** (السعر/الخصم)
-""")
+# ==========================================
+# 3. STREAMLIT UI
+# ==========================================
+st.title("🏷️ Offers Generator Pro (Merged)")
 
-uploaded_file = st.file_uploader("اختر ملف الإكسيل (Excel)", type=['xlsx'])
+if not has_font:
+    st.warning("⚠️ Font file `arial.ttf` not found. Arabic text will not render correctly.")
 
-if uploaded_file is not None:
+# --- Sidebar: Inputs ---
+st.sidebar.header("1. Upload Files")
+offers_file = st.sidebar.file_uploader("Upload Offers (Excel)", type=['xlsx'])
+stock_file = st.sidebar.file_uploader("Upload Stock (Excel)", type=['xlsx'])
+
+st.sidebar.header("2. Settings")
+min_qty = st.sidebar.number_input("Minimum Stock Qty", value=2, min_value=1)
+
+# --- Main Logic ---
+if offers_file and stock_file:
     try:
-        # قراءة الملف (header=0 يعني يعتبر الصف الأول عناوين ولكنا سنتجاهل أسماءها)
-        df = pd.read_excel(uploaded_file)
+        # Load Data
+        df_offers = pd.read_excel(offers_file)
+        df_stock = pd.read_excel(stock_file)
         
-        # التأكد من أن الملف يحتوي على 4 أعمدة على الأقل
-        if len(df.columns) < 4:
-            st.error("❌ خطأ: الملف المرفوع يحتوي على أقل من 4 أعمدة. يرجى التأكد من الملف.")
+        # Ensure Item Numbers are Strings for merging
+        df_offers['Item Number'] = df_offers['Item Number'].astype(str).str.replace('.0', '')
+        df_stock['Item Number'] = df_stock['Item Number'].astype(str).str.replace('.0', '')
+        
+        # Merge Logic (Left Join on Offers)
+        merged_df = pd.merge(df_offers, df_stock[['Item Number', 'Quantity']], on='Item Number', how='left')
+        
+        # Filter by Quantity
+        filtered_df = merged_df[merged_df['Quantity'] >= min_qty].copy()
+        
+        if filtered_df.empty:
+            st.error("❌ No items match the minimum quantity requirement.")
         else:
-            st.success(f"✅ تم تحميل الملف: {len(df)} صنف")
+            st.success(f"✅ Loaded {len(filtered_df)} items matching stock criteria.")
             
-            # عرض معاينة للمستخدم ليتأكد من الترتيب
-            st.write("👀 **معاينة البيانات (تأكد أن الترتيب صحيح):**")
-            st.dataframe(df.head())
+            # --- Dynamic Filters (Like the HTML Version) ---
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Category Filter
+                cats = ['All'] + sorted(list(filtered_df['Category'].dropna().unique()))
+                selected_cat = st.selectbox("Filter by Category", cats)
 
-            if st.button("تحويل إلى PDF"):
-                pdf_bytes = create_pdf(df)
-                st.download_button("📥 تحميل الملف", pdf_bytes, "offers_print.pdf", "application/pdf")
+            with col2:
+                # Brand Filter
+                brands = ['All'] + sorted(list(filtered_df['Brand'].dropna().unique()))
+                selected_brand = st.selectbox("Filter by Brand", brands)
                 
+            with col3:
+                 # Offer Type Filter
+                offer_types = ['All'] + sorted(list(filtered_df['Offer Description EN'].dropna().unique()))
+                selected_offer = st.selectbox("Filter by Offer", offer_types)
+
+            # Apply Filters
+            final_df = filtered_df.copy()
+            if selected_cat != 'All':
+                final_df = final_df[final_df['Category'] == selected_cat]
+            if selected_brand != 'All':
+                final_df = final_df[final_df['Brand'] == selected_brand]
+            if selected_offer != 'All':
+                final_df = final_df[final_df['Offer Description EN'] == selected_offer]
+                
+            st.divider()
+            st.subheader(f"🖨️ Ready to Print: {len(final_df)} Labels")
+            st.dataframe(final_df.head())
+            
+            if st.button("Generate PDF", type="primary"):
+                if len(final_df) > 0:
+                    pdf_data = generate_pdf(final_df)
+                    st.download_button(
+                        label="📥 Download PDF Labels",
+                        data=pdf_data,
+                        file_name="Offers_Labels_Merged.pdf",
+                        mime="application/pdf"
+                    )
+                else:
+                    st.warning("No data to print based on current filters.")
+
     except Exception as e:
-        st.error(f"خطأ: {e}")
+        st.error(f"An error occurred: {e}")
+else:
+    st.info("👋 Please upload both Offers and Stock Excel files in the sidebar to begin.")
