@@ -83,15 +83,29 @@ def draw_label(c, x, y, w, h, row, settings):
     
     current_y -= settings['spacing_header_to_brand']
 
-    # 2. البراند
+    # 2. البراند (BOLD)
     c.setFillColorRGB(0, 0, 0)
-    c.setFont(FONT_NAME if has_font else "Helvetica-Bold", settings['brand_font_size'])
+    
+    if has_font:
+        # تفعيل الـ Bold اليدوي للخطوط العربية
+        c.setFont(FONT_NAME, settings['brand_font_size'])
+        c.setTextRenderMode(2) # وضع التعبئة + الحدود
+        c.setLineWidth(0.7)    # سمك التغليظ
+        c.setStrokeColorRGB(0, 0, 0) # لون الحدود (أسود)
+    else:
+        c.setFont("Helvetica-Bold", settings['brand_font_size'])
+
     c.drawCentredString(center_x, current_y, str(brand_txt))
     
+    # إعادة الوضع الطبيعي
+    c.setTextRenderMode(0) 
+    c.setLineWidth(0)
+
     current_y -= settings['spacing_brand_to_name']
 
     # 3. الاسم الإنجليزي
     font_used = FONT_NAME if has_font else "Helvetica"
+    c.setFillColorRGB(0, 0, 0)
     current_y = draw_wrapped_text(c, str(desc_en), center_x, current_y, max_text_width, font_used, settings['name_font_size'])
 
     # 4. مسافة
@@ -104,10 +118,22 @@ def draw_label(c, x, y, w, h, row, settings):
     # 6. مسافة قبل العرض
     current_y -= settings['spacing_ar_to_offer']
 
-    # 7. العرض / السعر
-    c.setFont(FONT_NAME if has_font else "Helvetica-Bold", settings['price_font_size'])
+    # 7. العرض / السعر (BOLD RED)
     c.setFillColorRGB(0.85, 0.21, 0.27) # أحمر
+    
+    if has_font:
+        c.setFont(FONT_NAME, settings['price_font_size'])
+        c.setTextRenderMode(2) # وضع التعبئة + الحدود
+        c.setLineWidth(1)      # سمك التغليظ (أقوى قليلاً للسعر)
+        c.setStrokeColorRGB(0.85, 0.21, 0.27) # لون الحدود (أحمر)
+    else:
+        c.setFont("Helvetica-Bold", settings['price_font_size'])
+
     c.drawCentredString(center_x, current_y, str(offer_txt))
+
+    # إعادة الوضع الطبيعي
+    c.setTextRenderMode(0)
+    c.setLineWidth(0)
 
     # 8. الباركود
     barcode_y = y + settings['barcode_bottom_margin']
@@ -148,7 +174,7 @@ def generate_pdf(df, settings):
 # ==========================================
 # 3. واجهة المستخدم
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Full Control)")
+st.title("🏷️ Offers Generator Pro (Bold & Aligned)")
 
 if not has_font:
     st.warning("⚠️ Font `arial.ttf` missing. Arabic will look broken.")
@@ -165,26 +191,19 @@ show_borders = st.sidebar.checkbox("إظهار حدود للتجربة", False)
 
 with st.sidebar.expander("📏 المسافات (المحور الرأسي)", expanded=True):
     st.info("ملاحظة: 28 نقطة ≈ 1 سم")
-    
-    # === التحديثات بناءً على الصورة ===
-    s_top_offset = st.slider("إزاحة علوية (لتخطي الهيدر الأحمر)", 0, 100, 40) # الصورة: 40
-    
-    # تم تحديث القيمة الافتراضية والحد الأقصى ليتناسب مع القيمة 50
-    s_head_brand_gap = st.slider("مسافة: صيدلية -> براند", 5, 80, 50) # الصورة: 50
-    
-    s_brand_name_gap = st.slider("مسافة: براند -> اسم إنجليزي", 5, 50, 25) # الصورة: 25
-    
-    s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي", 5, 60, 15) # الصورة: 15
-    
-    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 85) # الصورة: 85
-    
-    s_bc_bottom = st.slider("مكان الباركود (من الأسفل)", 0, 80, 20) # الصورة: 20
+    # === القيم الافتراضية من الصورة ===
+    s_top_offset = st.slider("إزاحة علوية (لتخطي الهيدر الأحمر)", 0, 100, 40)
+    s_head_brand_gap = st.slider("مسافة: صيدلية -> براند", 5, 80, 50)
+    s_brand_name_gap = st.slider("مسافة: براند -> اسم إنجليزي", 5, 50, 25)
+    s_en_ar_gap = st.slider("مسافة: إنجليزي -> عربي", 5, 60, 15)
+    s_ar_offer_gap = st.slider("مسافة: عربي -> العرض", 10, 120, 85)
+    s_bc_bottom = st.slider("مكان الباركود (من الأسفل)", 0, 80, 20)
 
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=False):
     s_header_font = st.slider("حجم اسم الصيدلية", 6, 14, 8)
-    s_brand_font = st.slider("حجم البراند", 10, 24, 14)
+    s_brand_font = st.slider("حجم البراند (Bold)", 10, 24, 14)
     s_name_font = st.slider("حجم اسم الصنف", 8, 20, 11)
-    s_price_font = st.slider("حجم السعر/العرض", 10, 60, 24)
+    s_price_font = st.slider("حجم السعر/العرض (Bold)", 10, 60, 24)
     s_bc_h = st.slider("ارتفاع الباركود", 10, 50, 25)
     s_bc_font = st.slider("حجم رقم الباركود", 6, 14, 10)
 
@@ -222,17 +241,14 @@ if offers_file and stock_file:
             st.subheader("🔍 تصفية النتائج")
             c1, c2, c3 = st.columns(3)
             
-            # تجهيز القوائم
             cats = ['All'] + sorted(list(final_df['Category'].dropna().unique()))
             brands = ['All'] + sorted(list(final_df['Brand'].dropna().unique()))
             offers_list = ['All'] + sorted(list(final_df['Offer Description EN'].astype(str).dropna().unique()))
 
-            # عرض القوائم
             sel_cat = c1.selectbox("القسم", cats)
             sel_brand = c2.selectbox("البراند", brands)
             sel_offer = c3.selectbox("خصم العرض", offers_list)
 
-            # تطبيق الفلاتر
             if sel_cat != 'All': final_df = final_df[final_df['Category'] == sel_cat]
             if sel_brand != 'All': final_df = final_df[final_df['Brand'] == sel_brand]
             if sel_offer != 'All': final_df = final_df[final_df['Offer Description EN'].astype(str) == sel_offer]
