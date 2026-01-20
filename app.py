@@ -15,11 +15,10 @@ from bidi.algorithm import get_display
 # ==========================================
 st.set_page_config(page_title="Offers Generator Pro", layout="wide", page_icon="🏷️")
 
-FONT_PATH = "arial.ttf"  # Ensure this file exists in the directory
+FONT_PATH = "arial.ttf" 
 FONT_NAME = "CustomArial"
 
 def setup_fonts():
-    """Registers the font for Arabic support."""
     try:
         if os.path.exists(FONT_PATH):
             pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH))
@@ -32,9 +31,7 @@ def setup_fonts():
 has_font = setup_fonts()
 
 def process_text(text, is_arabic=False):
-    """Handles Arabic reshaping and bidi algorithm."""
-    if pd.isna(text) or text == "":
-        return ""
+    if pd.isna(text) or text == "": return ""
     text = str(text)
     if is_arabic and has_font:
         reshaped = arabic_reshaper.reshape(text)
@@ -42,61 +39,79 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. PDF GENERATION ENGINE
+# 2. PDF DRAWING ENGINE (WITH DYNAMIC SETTINGS)
 # ==========================================
-def draw_label(c, x, y, w, h, row):
-    """Draws a single label at coordinates x, y."""
-    # Data Extraction (Using Column Names from your Excel)
+def draw_label(c, x, y, w, h, row, settings):
+    """
+    Draws a single label using user-defined 'settings' for positions and sizes.
+    """
+    # --- Data Extraction ---
     item_code = str(row.get('Item Number', '')).replace('.0', '')
-    desc_en = row.get('Item Description EN', '')[:35] # Truncate if too long
+    desc_en = row.get('Item Description EN', '')[:35]
     desc_ar = row.get('Item Description AR', '')
     offer_txt = row.get('Offer Description EN', '')
-    
-    # Coordinates Calculation
+
     center_x = x + (w / 2)
     
-    # 1. Header
+    # Draw Border
     c.setLineWidth(0.5)
-    c.rect(x, y, w, h) # Border
+    c.rect(x, y, w, h)
+
+    # --- 1. HEADER (Pharmacy Name) ---
+    # Position: Calculated from the TOP of the card downwards
+    header_y_pos = y + h - settings['header_margin_top']
     
-    c.setFont(FONT_NAME if has_font else "Helvetica", 8)
+    c.setFont(FONT_NAME if has_font else "Helvetica", settings['header_font_size'])
     c.setFillColorRGB(0.4, 0.4, 0.4)
     header_text = process_text("Al-Dawaa Pharmacy | صيدلية الدواء", is_arabic=True)
-    c.drawCentredString(center_x, y + h - 15, header_text)
+    c.drawCentredString(center_x, header_y_pos, header_text)
+
+    # --- 2. ENGLISH NAME ---
+    # Position: Relative to the Header
+    en_name_y_pos = header_y_pos - settings['spacing_header_to_name']
     
-    # 2. English Name
     c.setFillColorRGB(0, 0, 0)
-    c.setFont(FONT_NAME if has_font else "Helvetica", 11)
-    c.drawCentredString(center_x, y + h - 35, str(desc_en))
+    c.setFont(FONT_NAME if has_font else "Helvetica", settings['name_font_size'])
+    c.drawCentredString(center_x, en_name_y_pos, str(desc_en))
+
+    # --- 3. ARABIC NAME ---
+    # Position: Relative to English Name
+    ar_name_y_pos = en_name_y_pos - settings['spacing_en_to_ar']
     
-    # 3. Arabic Name
-    c.setFont(FONT_NAME if has_font else "Helvetica", 11)
     ar_text = process_text(desc_ar, is_arabic=True)
-    c.drawCentredString(center_x, y + h - 50, ar_text)
+    c.drawCentredString(center_x, ar_name_y_pos, ar_text)
+
+    # --- 4. OFFER (Middle Section) ---
+    # Position: Relative to the exact CENTER of the card, plus a vertical shift
+    offer_y_pos = y + (h / 2) + settings['offer_vertical_shift']
     
-    # 4. The Offer (Big Red Text)
-    c.setFont(FONT_NAME if has_font else "Helvetica-Bold", 24)
-    c.setFillColorRGB(0.85, 0.21, 0.27) # Red Color
-    c.drawCentredString(center_x, y + (h/2) - 5, str(offer_txt))
+    c.setFont(FONT_NAME if has_font else "Helvetica-Bold", settings['offer_font_size'])
+    c.setFillColorRGB(0.85, 0.21, 0.27) # Red
+    c.drawCentredString(center_x, offer_y_pos, str(offer_txt))
+
+    # --- 5. BARCODE (Bottom Section) ---
+    # Position: Calculated from the BOTTOM of the card upwards
+    barcode_base_y = y + settings['barcode_margin_bottom']
     
-    # 5. Barcode & Number
     if item_code:
         try:
-            # Draw Barcode
-            barcode = code128.Code128(item_code, barHeight=25, barWidth=1.2)
-            # Center the barcode
+            # Draw Barcode lines
+            # Adjust barcode height based on font size to keep it proportional
+            bc_height = settings['barcode_height']
+            barcode = code128.Code128(item_code, barHeight=bc_height, barWidth=1.2)
             bc_x = center_x - (barcode.width / 2)
-            barcode.drawOn(c, bc_x, y + 25)
             
-            # Draw Number below barcode
+            # The barcode library draws from bottom-left corner
+            barcode.drawOn(c, bc_x, barcode_base_y + 10) 
+            
+            # Draw Number Text below barcode
             c.setFillColorRGB(0, 0, 0)
-            c.setFont("Helvetica", 10)
-            c.drawCentredString(center_x, y + 15, item_code)
+            c.setFont("Helvetica", settings['barcode_font_size'])
+            c.drawCentredString(center_x, barcode_base_y, item_code)
         except:
             pass
 
-def generate_pdf(df):
-    """Main loop to create PDF pages."""
+def generate_pdf(df, settings):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     
@@ -109,21 +124,17 @@ def generate_pdf(df):
     block_h = (page_h - (2 * margin)) / rows
     
     for i, (_, row) in enumerate(df.iterrows()):
-        # Check if we need a new page
         if i > 0 and i % (cols * rows) == 0:
             c.showPage()
             
-        # Calculate Position
         pos_on_page = i % (cols * rows)
         col_idx = pos_on_page % cols
         row_idx = pos_on_page // cols
         
-        # X grows left to right, Y grows bottom to top in PDF
         x = margin + (col_idx * block_w)
-        # Invert row index for top-to-bottom filling
         y = page_h - margin - ((row_idx + 1) * block_h)
         
-        draw_label(c, x, y, block_w, block_h, row)
+        draw_label(c, x, y, block_w, block_h, row, settings)
         
     c.save()
     buffer.seek(0)
@@ -132,85 +143,91 @@ def generate_pdf(df):
 # ==========================================
 # 3. STREAMLIT UI
 # ==========================================
-st.title("🏷️ Offers Generator Pro (Merged)")
+st.title("🏷️ Offers Generator Pro (Custom Layout)")
 
 if not has_font:
-    st.warning("⚠️ Font file `arial.ttf` not found. Arabic text will not render correctly.")
+    st.warning("⚠️ Font `arial.ttf` missing. Arabic will look wrong.")
 
-# --- Sidebar: Inputs ---
-st.sidebar.header("1. Upload Files")
+# --- SIDEBAR: FILE INPUTS ---
+st.sidebar.header("📂 1. Data Files")
 offers_file = st.sidebar.file_uploader("Upload Offers (Excel)", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("Upload Stock (Excel)", type=['xlsx'])
+min_qty = st.sidebar.number_input("Min Stock Qty", value=2, min_value=1)
 
-st.sidebar.header("2. Settings")
-min_qty = st.sidebar.number_input("Minimum Stock Qty", value=2, min_value=1)
+# --- SIDEBAR: DESIGN CONTROLS ---
+st.sidebar.markdown("---")
+st.sidebar.header("🎨 2. Design Settings")
 
-# --- Main Logic ---
+with st.sidebar.expander("🅰️ Font Sizes", expanded=False):
+    s_header_font = st.slider("Header Size", 6, 14, 8)
+    s_name_font = st.slider("Name (En/Ar) Size", 8, 18, 11)
+    s_offer_font = st.slider("Offer Price Size", 15, 60, 24)
+    s_bc_font = st.slider("Barcode Number Size", 6, 14, 10)
+
+with st.sidebar.expander("📏 Spacing & Margins", expanded=True):
+    st.caption("Adjust vertical positions")
+    # Top Section
+    s_head_top = st.slider("Header: Top Margin", 5, 40, 15)
+    s_head_name_gap = st.slider("Gap: Header -> En Name", 5, 40, 20)
+    s_en_ar_gap = st.slider("Gap: En Name -> Ar Name", 5, 30, 15)
+    
+    # Middle Section
+    s_offer_shift = st.slider("Offer: Shift Up/Down", -30, 30, -5)
+    
+    # Bottom Section
+    s_bc_bottom = st.slider("Barcode: Bottom Margin", 5, 50, 15)
+    s_bc_height = st.slider("Barcode: Height", 10, 50, 25)
+
+# Pack settings into a dictionary
+user_settings = {
+    'header_font_size': s_header_font,
+    'name_font_size': s_name_font,
+    'offer_font_size': s_offer_font,
+    'barcode_font_size': s_bc_font,
+    
+    'header_margin_top': s_head_top,
+    'spacing_header_to_name': s_head_name_gap,
+    'spacing_en_to_ar': s_en_ar_gap,
+    'offer_vertical_shift': s_offer_shift,
+    'barcode_margin_bottom': s_bc_bottom,
+    'barcode_height': s_bc_height
+}
+
+# --- MAIN LOGIC ---
 if offers_file and stock_file:
     try:
-        # Load Data
         df_offers = pd.read_excel(offers_file)
         df_stock = pd.read_excel(stock_file)
         
-        # Ensure Item Numbers are Strings for merging
+        # Clean & Merge
         df_offers['Item Number'] = df_offers['Item Number'].astype(str).str.replace('.0', '')
         df_stock['Item Number'] = df_stock['Item Number'].astype(str).str.replace('.0', '')
         
-        # Merge Logic (Left Join on Offers)
         merged_df = pd.merge(df_offers, df_stock[['Item Number', 'Quantity']], on='Item Number', how='left')
-        
-        # Filter by Quantity
-        filtered_df = merged_df[merged_df['Quantity'] >= min_qty].copy()
-        
-        if filtered_df.empty:
-            st.error("❌ No items match the minimum quantity requirement.")
+        final_df = merged_df[merged_df['Quantity'] >= min_qty].copy()
+
+        if final_df.empty:
+            st.error("❌ No items match filters.")
         else:
-            st.success(f"✅ Loaded {len(filtered_df)} items matching stock criteria.")
-            
-            # --- Dynamic Filters (Like the HTML Version) ---
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                # Category Filter
-                cats = ['All'] + sorted(list(filtered_df['Category'].dropna().unique()))
-                selected_cat = st.selectbox("Filter by Category", cats)
+            # --- Filters ---
+            c1, c2, c3 = st.columns(3)
+            with c1: 
+                cat_filter = st.selectbox("Category", ['All'] + sorted(list(final_df['Category'].dropna().unique())))
+            with c2:
+                brand_filter = st.selectbox("Brand", ['All'] + sorted(list(final_df['Brand'].dropna().unique())))
+            with c3:
+                off_filter = st.selectbox("Offer Type", ['All'] + sorted(list(final_df['Offer Description EN'].dropna().unique())))
 
-            with col2:
-                # Brand Filter
-                brands = ['All'] + sorted(list(filtered_df['Brand'].dropna().unique()))
-                selected_brand = st.selectbox("Filter by Brand", brands)
-                
-            with col3:
-                 # Offer Type Filter
-                offer_types = ['All'] + sorted(list(filtered_df['Offer Description EN'].dropna().unique()))
-                selected_offer = st.selectbox("Filter by Offer", offer_types)
+            if cat_filter != 'All': final_df = final_df[final_df['Category'] == cat_filter]
+            if brand_filter != 'All': final_df = final_df[final_df['Brand'] == brand_filter]
+            if off_filter != 'All': final_df = final_df[final_df['Offer Description EN'] == off_filter]
 
-            # Apply Filters
-            final_df = filtered_df.copy()
-            if selected_cat != 'All':
-                final_df = final_df[final_df['Category'] == selected_cat]
-            if selected_brand != 'All':
-                final_df = final_df[final_df['Brand'] == selected_brand]
-            if selected_offer != 'All':
-                final_df = final_df[final_df['Offer Description EN'] == selected_offer]
-                
-            st.divider()
-            st.subheader(f"🖨️ Ready to Print: {len(final_df)} Labels")
-            st.dataframe(final_df.head())
+            st.success(f"Items found: {len(final_df)}")
             
-            if st.button("Generate PDF", type="primary"):
-                if len(final_df) > 0:
-                    pdf_data = generate_pdf(final_df)
-                    st.download_button(
-                        label="📥 Download PDF Labels",
-                        data=pdf_data,
-                        file_name="Offers_Labels_Merged.pdf",
-                        mime="application/pdf"
-                    )
-                else:
-                    st.warning("No data to print based on current filters.")
+            # --- Generate Button ---
+            if st.button("Generate Custom PDF", type="primary"):
+                pdf_data = generate_pdf(final_df, user_settings) # Pass settings here
+                st.download_button("Download PDF", pdf_data, "Custom_Labels.pdf", "application/pdf")
 
     except Exception as e:
-        st.error(f"An error occurred: {e}")
-else:
-    st.info("👋 Please upload both Offers and Stock Excel files in the sidebar to begin.")
+        st.error(f"Error: {e}")
