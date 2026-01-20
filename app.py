@@ -122,7 +122,7 @@ def draw_card_content(c, row):
     offer_y = -(height / 2) - 5 
     if has_font:
         draw_text_auto_shrink(c, str(offer_txt), center_x, offer_y, max_text_width, 
-                              FONT_NAME, 24, min_font_size=12, 
+                              FONT_NAME, 20, min_font_size=12, 
                               color=(0.85, 0.21, 0.27), is_bold=True)
     else:
         c.setFont("Helvetica-Bold", 24)
