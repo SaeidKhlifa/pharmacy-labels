@@ -8,19 +8,18 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics.barcode import code128
+from reportlab.lib.utils import simpleSplit
 import arabic_reshaper
 from bidi.algorithm import get_display
 
 # ==========================================
 # 1. إعدادات القياسات الدقيقة (بالسنتيمتر)
 # ==========================================
-# المسافات الرأسية (من أعلى الورقة)
-DIM_ROW1_TOP_CM = 7.7    # بداية الأصفر العلوي
-DIM_ROW2_TOP_CM = 22.5   # بداية الأصفر السفلي
-DIM_YELLOW_H_CM = 7.5    # ارتفاع المنطقة الصفراء
+DIM_ROW1_TOP_CM = 7.7    
+DIM_ROW2_TOP_CM = 22.5   
+DIM_YELLOW_H_CM = 7.5    
 
-# مراكز الأعمدة (من حافة الورقة اليمنى) كما حددتها أنت
-# العمود الأيمن، الأوسط، الأيسر
+# مراكز الأعمدة (من حافة الورقة اليمنى)
 CENTERS_FROM_RIGHT_CM = [3.5, 10.5, 17.9]
 
 # أبعاد النصوص (داخل المنطقة الصفراء)
@@ -29,12 +28,11 @@ POS_EN_Y_CM = 1.6
 POS_AR_Y_CM = 2.6
 POS_BARCODE_BOTTOM_CM = 0.8
 
-# الملفات
 FONT_PATH = "arial.ttf"
 FONT_NAME = "CustomArial"
 TEMPLATE_PATH = "template.png"
 
-st.set_page_config(page_title="Offers Generator (Absolute Centers)", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="Offers Generator (Multiline Support)", layout="wide", page_icon="📝")
 
 def cm2p(cm):
     return cm * 28.3465
@@ -61,46 +59,72 @@ def process_text(text, is_arabic=False):
     return text
 
 # ==========================================
-# 2. دوال الرسم (تعتمد على المركز 0,0)
+# 2. دوال الرسم الذكية (Multiline)
 # ==========================================
 
-def draw_text_auto_shrink(c, text, y, max_width, font_name, max_font_size, min_font_size=6, color=(0,0,0), is_bold=False):
-    """رسم نص متمركز حول الصفر (0, y)"""
-    current_size = max_font_size
-    text_width = pdfmetrics.stringWidth(text, font_name, current_size)
-    
-    while text_width > max_width and current_size > min_font_size:
-        current_size -= 0.5
-        text_width = pdfmetrics.stringWidth(text, font_name, current_size)
-    
+def draw_text_multiline(c, text, y_center, max_width, font_name, max_font_size, min_font_size=6, color=(0,0,0), is_bold=False):
+    """
+    رسم نص ذكي: يحاول سطر واحد، ثم سطرين، مع تصغير الخط ليتناسب مع المساحة الثابتة.
+    """
     c.setFillColorRGB(*color)
     c.setStrokeColorRGB(*color)
     
-    if is_bold:
-        c.setLineWidth(0.5 if current_size < 12 else 0.8)
-        text_obj = c.beginText()
-        text_obj.setTextRenderMode(2) 
-        text_obj.setFont(font_name, current_size)
-        # بما أننا نرسم حول المركز 0، فالبداية تكون سالب نصف العرض
-        start_x = -(text_width / 2)
-        text_obj.setTextOrigin(start_x, y)
-        text_obj.textOut(text)
-        c.drawText(text_obj)
-        c.setLineWidth(0)
-    else:
-        c.setFont(font_name, current_size)
-        c.drawCentredString(0, y, text) # X=0 لأننا قمنا بنقل المؤشر للمركز
+    current_size = max_font_size
+    lines = []
     
+    # محاولة إيجاد حجم الخط المناسب
+    while current_size >= min_font_size:
+        # محاولة تقسيم النص بناءً على العرض المتاح وحجم الخط الحالي
+        # simpleSplit تعيد قائمة بالأسطر التي تناسب العرض
+        lines = simpleSplit(text, font_name, current_size, max_width)
+        
+        # الشرط: يجب أن يكون عدد الأسطر 1 أو 2 فقط
+        if len(lines) <= 2:
+            break # وجدنا الحجم المناسب
+        
+        # إذا كان النص طويلاً جداً حتى لسطرين، نصغر الخط ونحاول مجدداً
+        current_size -= 0.5
+        
+    # إعدادات الخط النهائية
+    c.setFont(font_name, current_size)
+    if is_bold:
+        c.setTextRenderMode(2)
+        c.setLineWidth(0.5 if current_size < 12 else 0.8)
+    else:
+        c.setTextRenderMode(0)
+        c.setLineWidth(0)
+
+    # حساب الإحداثيات لرسم الأسطر متمركزة حول y_center
+    leading = current_size * 1.2 # المسافة بين السطور
+    total_height = leading * len(lines)
+    
+    # نقطة بداية الرسم (لأعلى سطر) بحيث يكون بلوك النص في المنتصف رأسياً
+    # y_center هو مركز النص المراد، نرفع القلم لنصف الارتفاع الكلي
+    # ملاحظة: في reportlab الرسم يبدأ من الـ baseline، لذا الحسابات دقيقة:
+    start_y = y_center + (total_height / 2) - (current_size * 0.8) # ضبط دقيق للـ baseline
+
+    for line in lines:
+        text_width = pdfmetrics.stringWidth(line, font_name, current_size)
+        start_x = -(text_width / 2) # توسيط أفقي (حول الصفر)
+        
+        if is_bold:
+            text_obj = c.beginText()
+            text_obj.setFont(font_name, current_size)
+            text_obj.setTextOrigin(start_x, start_y)
+            text_obj.textOut(line)
+            c.drawText(text_obj)
+        else:
+            c.drawString(start_x, start_y, line)
+            
+        start_y -= leading # النزول للسطر التالي
+
+    # إعادة الألوان والخطوط للوضع الطبيعي
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(0)
+    c.setTextRenderMode(0)
 
 def draw_card_content(c, row, settings):
-    """
-    رسم المحتوى.
-    نقطة الأصل (0,0) هنا هي:
-    X: منتصف الخط الأبيض بالضبط.
-    Y: الخط الفاصل بين الأحمر والأصفر.
-    """
     item_code = str(row.get('Item Number', '')).replace('.0', '')
     desc_en = row.get('Item Description EN', '') 
     desc_ar = row.get('Item Description AR', '')
@@ -108,35 +132,34 @@ def draw_card_content(c, row, settings):
     offer_txt = row.get('Offer Description EN', '')
 
     height = cm2p(DIM_YELLOW_H_CM)
-    # عرض تقديري للكارت لضبط التفاف النص (7 سم)
-    max_text_width = cm2p(7.0) * 0.95 
+    max_text_width = cm2p(7.0) * 0.90 # هامش أمان
 
     # 1. البراند
     brand_y = -cm2p(POS_BRAND_Y_CM)
     if has_font:
-        draw_text_auto_shrink(c, str(brand_txt), brand_y, max_text_width, 
-                              FONT_NAME, settings['font_brand'], min_font_size=8, is_bold=True)
+        draw_text_multiline(c, str(brand_txt), brand_y, max_text_width, 
+                            FONT_NAME, settings['font_brand'], min_font_size=8, is_bold=True)
     else:
         c.setFont("Helvetica-Bold", settings['font_brand'])
         c.drawCentredString(0, brand_y, str(brand_txt))
 
-    # 2. الاسم الإنجليزي
+    # 2. الاسم الإنجليزي (تم تفعيل خاصية السطرين هنا)
     en_y = -cm2p(POS_EN_Y_CM)
-    draw_text_auto_shrink(c, str(desc_en), en_y, max_text_width, 
-                          FONT_NAME if has_font else "Helvetica", settings['font_name'], min_font_size=8)
+    draw_text_multiline(c, str(desc_en), en_y, max_text_width, 
+                        FONT_NAME if has_font else "Helvetica", settings['font_name'], min_font_size=7)
 
-    # 3. الاسم العربي
+    # 3. الاسم العربي (تم تفعيل خاصية السطرين هنا أيضاً)
     ar_y = -cm2p(POS_AR_Y_CM)
     ar_txt_proc = process_text(desc_ar, is_arabic=True)
-    draw_text_auto_shrink(c, ar_txt_proc, ar_y, max_text_width, 
-                          FONT_NAME if has_font else "Helvetica", settings['font_name'], min_font_size=8)
+    draw_text_multiline(c, ar_txt_proc, ar_y, max_text_width, 
+                        FONT_NAME if has_font else "Helvetica", settings['font_name'], min_font_size=7)
 
     # 4. العرض
     offer_y = -(height / 2) - 5 
     if has_font:
-        draw_text_auto_shrink(c, str(offer_txt), offer_y, max_text_width, 
-                              FONT_NAME, settings['font_offer'], min_font_size=12, 
-                              color=(0.85, 0.21, 0.27), is_bold=True)
+        draw_text_multiline(c, str(offer_txt), offer_y, max_text_width, 
+                            FONT_NAME, settings['font_offer'], min_font_size=12, 
+                            color=(0.85, 0.21, 0.27), is_bold=True)
     else:
         c.setFont("Helvetica-Bold", settings['font_offer'])
         c.setFillColorRGB(0.85, 0.21, 0.27)
@@ -144,14 +167,11 @@ def draw_card_content(c, row, settings):
 
     # 5. الباركود
     barcode_y = -height + cm2p(POS_BARCODE_BOTTOM_CM)
-    
     if item_code:
         try:
             barcode = code128.Code128(item_code, barHeight=20, barWidth=1.2)
-            # الباركود يرسم من الركن الأيسر، لذا نطرح نصف عرضه ليتوسط
             bc_x = -(barcode.width / 2)
             barcode.drawOn(c, bc_x, barcode_y + 10)
-            
             c.setFillColorRGB(0, 0, 0)
             c.setFont("Helvetica", 8)
             c.drawCentredString(0, barcode_y, item_code)
@@ -161,20 +181,15 @@ def draw_card_content(c, row, settings):
 def generate_pdf(df, settings, preview_mode=False):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
-    page_w_pt, page_h_pt = A4 # عرض الصفحة 21.0 سم
+    page_w_pt, page_h_pt = A4 
     
     row1_top = cm2p(DIM_ROW1_TOP_CM)
     row2_top = cm2p(DIM_ROW2_TOP_CM)
     
-    # === تحويل مراكزك (من اليمين) إلى نظام PDF (من اليسار) ===
-    # 21.0 - 17.9 = 3.1 سم (اليسار)
-    # 21.0 - 10.5 = 10.5 سم (الوسط)
-    # 21.0 - 3.5  = 17.5 سم (اليمين)
-    # القائمة النهائية للمراكز من اليسار لليمين:
     abs_centers_from_left = [
-        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[2]), # العمود 0 (الأيسر)
-        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[1]), # العمود 1 (الأوسط)
-        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[0])  # العمود 2 (الأيمن)
+        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[2]), 
+        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[1]), 
+        cm2p(21.0 - CENTERS_FROM_RIGHT_CM[0])  
     ]
     
     cols = 3
@@ -196,19 +211,15 @@ def generate_pdf(df, settings, preview_mode=False):
         col_idx = pos_in_page % cols
         row_idx = pos_in_page // cols
         
-        # 1. تحديد X (بناءً على المراكز الثابتة)
         x_center = abs_centers_from_left[col_idx]
         
-        # 2. تحديد Y (بناءً على الصف)
         if row_idx == 0:
             y_start = page_h_pt - row1_top
         else:
             y_start = page_h_pt - row2_top
 
-        # 3. تطبيق الإزاحات (Calibration)
         offset_x = 0
         offset_y = 0
-        
         if row_idx == 0:
             offset_x = cm2p(settings['top_x_cm'])
             offset_y = cm2p(settings['top_y_cm'])
@@ -238,7 +249,7 @@ def create_preview_image(df, settings):
 # ==========================================
 # 3. الواجهة
 # ==========================================
-st.title("🖨️ Offers Generator (Targeted Centers)")
+st.title("🖨️ Offers Generator (Multiline Layout)")
 
 if not has_font:
     st.error("⚠️ ملف الخط `arial.ttf` مفقود!")
@@ -261,9 +272,10 @@ with tab_bot:
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=True):
-    s_f_brand = st.slider("خط البراند", 8, 20, 12)
-    s_f_name = st.slider("خط الأسماء", 6, 18, 10)
-    s_f_offer = st.slider("خط العرض", 10, 40, 24)
+    st.info("البرنامج سيصغر الخط تلقائياً إذا زاد النص عن سطرين")
+    s_f_brand = st.slider("أقصى خط للبراند", 8, 20, 12)
+    s_f_name = st.slider("أقصى خط للأسماء", 6, 18, 10)
+    s_f_offer = st.slider("أقصى خط للعرض", 10, 40, 24)
 
 user_settings = {
     'top_x_cm': s_top_x, 'top_y_cm': s_top_y,
@@ -283,7 +295,6 @@ if offers_file and stock_file:
         if base_df.empty:
             st.warning("لا توجد أصناف.")
         else:
-            # --- الفلاتر ---
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
             cats = ['All'] + sorted(list(base_df['Category'].astype(str).unique()))
@@ -304,7 +315,7 @@ if offers_file and stock_file:
                 if has_template:
                     if st.button("👁️ معاينة حية"):
                         img = create_preview_image(final_df, user_settings)
-                        st.image(img, caption="معاينة دقيقة")
+                        st.image(img, caption="معاينة (مع دعم السطرين)")
                 
                 pdf_data = generate_pdf(final_df, user_settings)
                 st.download_button("📥 تحميل PDF", pdf_data, "Offers.pdf", "application/pdf", type="primary")
