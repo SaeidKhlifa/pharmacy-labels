@@ -317,11 +317,11 @@ s_top_y = 0.0
 s_bot_x = 0.0
 s_bot_y = -0.70
 
-st.sidebar.markdown("---")
-with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=True):
-    s_f_brand = st.slider("أقصى خط للبراند", 8, 20, 12)
-    s_f_name = st.slider("أقصى خط للأسماء", 6, 18, 10)
-    s_f_offer = st.slider("أقصى خط للعرض", 10, 40, 24)
+#st.sidebar.markdown("---")
+#with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=True):
+  #  s_f_brand = st.slider("أقصى خط للبراند", 8, 20, 12)
+   # s_f_name = st.slider("أقصى خط للأسماء", 6, 18, 10)
+   # s_f_offer = st.slider("أقصى خط للعرض", 10, 40, 24)
 
 user_settings = {
     'top_x_cm': s_top_x, 'top_y_cm': s_top_y,
