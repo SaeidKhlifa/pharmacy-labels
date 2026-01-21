@@ -305,7 +305,7 @@ if not has_font:
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون", type=['xlsx'])
-min_qty = st.sidebar.number_input("أقل كمية", 1, 100, 2)
+#min_qty = st.sidebar.number_input("أقل كمية", 1, 100, 2)
 
 st.sidebar.markdown("---")
 
