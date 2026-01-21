@@ -233,7 +233,7 @@ def create_preview_image(df, settings):
 # ==========================================
 # 3. الواجهة
 # ==========================================
-st.title("🖨️ Offers Generator (Fixed & Stable)")
+st.title("🖨️ Offers Generator")
 
 if not has_font:
     st.error("⚠️ ملف الخط `arial.ttf` مفقود!")
