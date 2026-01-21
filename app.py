@@ -305,7 +305,7 @@ if not has_font:
 st.sidebar.header("1. البيانات")
 offers_file = st.sidebar.file_uploader("ملف العروض", type=['xlsx'])
 stock_file = st.sidebar.file_uploader("ملف المخزون", type=['xlsx'])
-#min_qty = st.sidebar.number_input("أقل كمية", 1, 100, 2)
+min_qty = st.sidebar.number_input("أقل كمية", 1, 100, 2)
 
 st.sidebar.markdown("---")
 
@@ -317,11 +317,18 @@ s_top_y = 0.0
 s_bot_x = 0.0
 s_bot_y = -0.70
 
-#st.sidebar.markdown("---")
-#with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=True):
-  #  s_f_brand = st.slider("أقصى خط للبراند", 8, 20, 12)
-   # s_f_name = st.slider("أقصى خط للأسماء", 6, 18, 10)
-   # s_f_offer = st.slider("أقصى خط للعرض", 10, 40, 24)
+st.sidebar.markdown("---")
+
+# --- تأمين قيم افتراضية لأحجام الخطوط (تمنع NameError)
+s_f_brand = 12
+s_f_name = 10
+s_f_offer = 24
+
+with st.sidebar.expander("🅰️ أحجام الخطوط", expanded=True):
+    # داخل الـ expander يتم إعادة تعيين القيم عند عرض الواجهة
+    s_f_brand = st.slider("أقصى خط للبراند", 8, 20, s_f_brand)
+    s_f_name = st.slider("أقصى خط للأسماء", 6, 18, s_f_name)
+    s_f_offer = st.slider("أقصى خط للعرض", 10, 40, s_f_offer)
 
 user_settings = {
     'top_x_cm': s_top_x, 'top_y_cm': s_top_y,
